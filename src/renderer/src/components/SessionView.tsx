@@ -14,11 +14,13 @@ import {
   insertTab,
   isArranged,
   makeGroup,
+  paneToward,
   removeTab,
   tabGroupIds,
   type LayoutNode
 } from '../lib/layout'
 import { aheadBehind, filesChanged, homeRelative } from '../lib/format'
+import { useShortcuts } from '../lib/shortcuts'
 
 /**
  * A tab in the board. Claude and Editor are permanent; script tabs appear when a setup or run
@@ -62,6 +64,8 @@ interface SessionViewProps {
   /** Null for a local session — a folder with no repo behind it, so no git, setup or run scripts. */
   repo: Repo | null
   active: boolean
+  /** A dialog is up, so the keyboard belongs to it rather than to this session's tabs. */
+  dialogOpen: boolean
   home: string
   /**
    * This session may already have a conversation — it predates this app launch, or it was just
@@ -94,6 +98,7 @@ export default function SessionView({
   session,
   repo,
   active,
+  dialogOpen,
   home,
   resume,
   sharedFolder,
@@ -181,6 +186,52 @@ export default function SessionView({
     },
     [focus]
   )
+
+  /*
+   * Tabs and panes from the keyboard. Only the session on screen listens, so eight open sessions do
+   * not all answer the same chord.
+   *
+   * Both hand the keyboard over deliberately rather than letting the arriving pane take it: the tab
+   * being left holds it, and a chord that shows a terminal without letting the user type into it has
+   * done half a job.
+   */
+  const stepTab = useCallback(
+    (delta: number) => {
+      const current = layoutRef.current
+      const group = groupOf(current, focusRef.current)
+      if (!group || group.tabs.length < 2) return
+      const at = group.tabs.indexOf(focusRef.current)
+      const next = group.tabs[(at + delta + group.tabs.length) % group.tabs.length]
+      setLayout(activateTab(current, next))
+      focus(next, true)
+    },
+    [focus]
+  )
+
+  const movePane = useCallback(
+    (toward: 'left' | 'right' | 'up' | 'down') => {
+      const current = layoutRef.current
+      const from = groupOf(current, focusRef.current)
+      if (!from) return
+      const target = paneToward(current, from.id, toward)
+      const landing = groupsOf(current).find((group) => group.id === target)
+      if (landing?.active) focus(landing.active, true)
+    },
+    [focus]
+  )
+
+  useShortcuts((shortcut) => {
+    if (!active || dialogOpen) return false
+    if (shortcut.kind === 'tab-step') {
+      stepTab(shortcut.delta)
+      return true
+    }
+    if (shortcut.kind === 'pane-move') {
+      movePane(shortcut.toward)
+      return true
+    }
+    return false
+  })
 
   /*
    * What each pane is asked, once per render.

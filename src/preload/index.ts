@@ -30,6 +30,7 @@ import type {
 } from '@shared/types'
 import { platformOf } from '@shared/platform'
 import type { ThemeName } from '@shared/theme'
+import type { Chord } from '@shared/shortcuts'
 
 export interface Snapshot {
   repos: Repo[]
@@ -92,6 +93,11 @@ const api = {
    * appearance under a `system` preference.
    */
   onTheme: (cb: (theme: ThemeName) => void) => subscribe('state:theme', cb),
+  /**
+   * Chords pressed inside the editor pane, which is a separate process and so has to hand them over.
+   * Only the ones main intercepts arrive here; everything else stays the workbench's.
+   */
+  onShortcut: (cb: (chord: Chord) => void) => subscribe<Chord>('shortcut', cb),
 
   preferences: {
     /** Patches one setting and answers with the whole of what is now stored. */

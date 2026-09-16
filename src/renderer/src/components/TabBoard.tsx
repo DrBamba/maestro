@@ -427,6 +427,9 @@ export default function TabBoard({
           <div
             key={tab.key}
             className="board__pane"
+            // Which tab a pane belongs to. Every terminal's focus target looks alike from outside,
+            // so this is what makes "the keyboard is in Claude, not in a console" answerable.
+            data-pane-key={tab.key}
             style={{
               ...box(frame ? paneRect(frame.rect) : { x: 0, y: 0, w: 0, h: 0 }),
               display: shown ? 'flex' : 'none'

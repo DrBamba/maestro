@@ -14,6 +14,7 @@ import { configureProfile, profile, resolveSourceLabel } from './profile'
 import { hydratePath } from './shellEnv'
 import { seedDemoRepos } from './demo'
 import { platformOf } from '@shared/platform'
+import { matchShortcut, reachesEditor } from '@shared/shortcuts'
 
 const platform = platformOf(process.platform)
 
@@ -143,6 +144,33 @@ function createWindow(): void {
     mainWindow = null
   })
 }
+
+/**
+ * The chords that have to work from inside the editor pane.
+ *
+ * That pane is a `<webview>`, a process of its own, so keys pressed in it never reach the window's
+ * keydown listener — without this, jumping to another tab or session would stop working in the pane
+ * people spend the longest in. Taken here, before the workbench sees them, and handed to the
+ * renderer as the same chord it would have read itself.
+ */
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() !== 'webview') return
+
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const chord = {
+      key: input.key,
+      code: input.code,
+      shift: input.shift,
+      meta: input.meta,
+      control: input.control
+    }
+    const shortcut = matchShortcut(chord, platform === 'mac')
+    if (!shortcut || !reachesEditor(shortcut)) return
+    event.preventDefault()
+    mainWindow?.webContents.send('shortcut', chord)
+  })
+})
 
 void app.whenReady().then(async () => {
   console.log(`[maestro] profile=${profile()} userData=${app.getPath('userData')}`)
