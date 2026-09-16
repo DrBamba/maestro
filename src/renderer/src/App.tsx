@@ -12,7 +12,7 @@ import type {
   Session,
   StartMode
 } from '@shared/types'
-import Sidebar from './components/Sidebar'
+import Sidebar, { sidebarOrder } from './components/Sidebar'
 import SessionView from './components/SessionView'
 import CommandPalette, { type Command } from './components/CommandPalette'
 import NewSessionDialog from './components/NewSessionDialog'
@@ -25,10 +25,11 @@ import RenameDialog from './components/RenameDialog'
 import SettingsDialog from './components/SettingsDialog'
 import Tooltip from './components/Tooltip'
 import type { EditorHandle } from './components/EditorPane'
-import { shortcut } from './lib/format'
 import type { ThemeName } from '@shared/theme'
 import { initialTheme } from './theme'
 import { playChime } from './lib/chime'
+import { mac, useShortcuts } from './lib/shortcuts'
+import { chordHint } from '@shared/shortcuts'
 
 type Overlay =
   | 'palette'
@@ -41,6 +42,18 @@ type Overlay =
   | 'rename'
   | 'settings'
   | null
+
+/**
+ * The number chord that reaches a session, or undefined for one no digit does — ⌘1 to ⌘8 count from
+ * the top, and ⌘9 is the last row however many there are, so the rows in between have no digit.
+ */
+function digitHint(order: Session[], id: string): string | undefined {
+  const at = order.findIndex((s) => s.id === id)
+  if (at === -1) return undefined
+  if (at < 8) return chordHint({ kind: 'session-at', index: at }, mac)
+  if (at === order.length - 1) return chordHint({ kind: 'session-at', index: -1 }, mac)
+  return undefined
+}
 
 export default function App(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([])
@@ -68,6 +81,7 @@ export default function App(): React.JSX.Element {
   const [toast, setToast] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const [openedIds, setOpenedIds] = useState<string[]>([])
+  const [localCollapsed, setLocalCollapsed] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, GitStatus | null>>({})
   const [remote, setRemote] = useState<string | null>(null)
 
@@ -400,21 +414,64 @@ export default function App(): React.JSX.Element {
   )
 
   // ── keyboard ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      const meta = e.metaKey || e.ctrlKey
-      if (meta && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setOverlay((current) => (current === 'palette' ? null : 'palette'))
-      } else if (meta && e.key.toLowerCase() === 'n') {
-        e.preventDefault()
-        setNewRepoId(activeRepo?.id ?? null)
-        setOverlay('new')
-      }
+  /** The rows on screen, which is what the number chords count and what stepping walks. */
+  const navOrder = useMemo(
+    () => sidebarOrder(repos, sessions, localCollapsed),
+    [repos, sessions, localCollapsed]
+  )
+
+  /**
+   * The next session with something for the user: one asking a question first, then one that
+   * finished while they were looking elsewhere.
+   *
+   * Searched from the one after the active session and wrapping past it, so pressing again walks the
+   * queue rather than bouncing between the same two. The session already on screen is not a
+   * candidate — it is being looked at, which is what the chord was for.
+   */
+  const nextWaiting = useCallback((): string | null => {
+    const at = navOrder.findIndex((s) => s.id === activeId)
+    const rotated = at === -1 ? navOrder : [...navOrder.slice(at + 1), ...navOrder.slice(0, at)]
+    const unseenSet = new Set(unseen)
+    return (
+      rotated.find((s) => agentStates[s.id]?.state === 'attention')?.id ??
+      rotated.find((s) => unseenSet.has(s.id))?.id ??
+      null
+    )
+  }, [navOrder, activeId, agentStates, unseen])
+
+  useShortcuts((shortcut) => {
+    if (shortcut.kind === 'palette') {
+      setOverlay((current) => (current === 'palette' ? null : 'palette'))
+      return true
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [activeRepo])
+    if (shortcut.kind === 'new-session') {
+      setNewRepoId(activeRepo?.id ?? null)
+      setOverlay('new')
+      return true
+    }
+    // Nothing navigates behind an open dialog: the answer being typed into it is the thing in hand.
+    if (overlay) return false
+
+    if (shortcut.kind === 'session-step') {
+      if (navOrder.length === 0) return true
+      const at = navOrder.findIndex((s) => s.id === activeId)
+      const to = (at + shortcut.delta + navOrder.length) % navOrder.length
+      selectSession(navOrder[at === -1 ? 0 : to].id)
+      return true
+    }
+    if (shortcut.kind === 'session-at') {
+      const target = shortcut.index === -1 ? navOrder[navOrder.length - 1] : navOrder[shortcut.index]
+      if (target) selectSession(target.id)
+      return true
+    }
+    if (shortcut.kind === 'session-attention') {
+      const target = nextWaiting()
+      if (target) selectSession(target)
+      else notice('Nothing else waiting on you')
+      return true
+    }
+    return false
+  })
 
   // ── command palette ───────────────────────────────────────────────────────
   const commands = useMemo<Command[]>(() => {
@@ -423,7 +480,7 @@ export default function App(): React.JSX.Element {
         id: 'new',
         icon: 'ph ph-plus',
         label: 'New session',
-        hint: shortcut('n'),
+        hint: chordHint({ kind: 'new-session' }, mac),
         run: () => {
           setNewRepoId(activeRepo?.id ?? null)
           setOverlay('new')
@@ -460,11 +517,28 @@ export default function App(): React.JSX.Element {
       }
     ]
 
+    if (navOrder.length > 1) {
+      list.push({
+        id: 'attention',
+        icon: 'ph ph-bell',
+        label: 'Next session waiting on you',
+        hint: chordHint({ kind: 'session-attention' }, mac),
+        run: () => {
+          const target = nextWaiting()
+          setOverlay(null)
+          if (target) selectSession(target)
+          else notice('Nothing else waiting on you')
+        }
+      })
+    }
+
     for (const session of sessions.filter((s) => !s.archived && s.id !== activeId)) {
       list.push({
         id: `switch-${session.id}`,
         icon: 'ph ph-terminal-window',
         label: `Switch to: ${session.name}`,
+        // The chord that gets there, for the rows a digit reaches — the first eight, and the last.
+        hint: digitHint(navOrder, session.id),
         run: () => {
           selectSession(session.id)
           setOverlay(null)
@@ -610,7 +684,9 @@ export default function App(): React.JSX.Element {
     openDispose,
     openRename,
     restoreSession,
-    selectSession
+    selectSession,
+    navOrder,
+    nextWaiting
   ])
 
   const openSessions = openedIds
@@ -634,6 +710,8 @@ export default function App(): React.JSX.Element {
           setOverlay('new')
         }}
         onNewLocal={() => setOverlay('local')}
+        localCollapsed={localCollapsed}
+        onToggleLocal={() => setLocalCollapsed((v) => !v)}
         onToggleRepo={toggleRepo}
         onAddRepo={() => void addRepo()}
         onRestore={(id) => void restoreSession(id)}
@@ -652,6 +730,7 @@ export default function App(): React.JSX.Element {
             session={session}
             repo={repo}
             active={session.id === activeId}
+            dialogOpen={overlay !== null}
             home={home}
             // Age is the usual test, but a session archived and restored in this same run is
             // younger than the app and still has a conversation waiting for it.

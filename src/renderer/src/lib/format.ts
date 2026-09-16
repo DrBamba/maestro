@@ -31,12 +31,3 @@ export function defaultPrTitle(sessionName: string): string {
   if (!trimmed) return 'Update'
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
 }
-
-/**
- * How a shortcut is written down for this platform. macOS spells its modifier with a glyph and no
- * separator; everywhere else writes "Ctrl+N", and rendering ⌘ to a Linux user names a key their
- * keyboard does not have.
- */
-export function shortcut(key: string): string {
-  return window.maestro.platform === 'mac' ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`
-}

@@ -130,6 +130,48 @@ export function StateDot({
   )
 }
 
+/** The live rows of one group, in the order they are listed. `null` is the Local group. */
+export function groupRows(sessions: Session[], repoId: string | null): Session[] {
+  return sessions.filter((s) =>
+    repoId === null ? isLocal(s) && !s.archived : s.repoId === repoId && !s.archived
+  )
+}
+
+/**
+ * Local rows in the order they read on screen. Sessions sharing a folder are listed together where
+ * the first of them sits, the same gathering {@link GroupBody} draws — so a session opened between
+ * two that share a folder reads after both of them.
+ */
+function gatheredByFolder(rows: Session[]): Session[] {
+  const byFolder = new Map<string, Session[]>()
+  for (const session of rows) {
+    byFolder.set(session.worktreePath, [...(byFolder.get(session.worktreePath) ?? []), session])
+  }
+  const placed = new Set<string>()
+  return rows.flatMap((session) => {
+    if (placed.has(session.worktreePath)) return []
+    placed.add(session.worktreePath)
+    return byFolder.get(session.worktreePath) ?? [session]
+  })
+}
+
+/**
+ * Every session the sidebar is currently showing, in reading order — what the number chords count.
+ *
+ * A collapsed group is skipped, so ⌘3 is the third row on screen rather than the third that would be
+ * there if everything were open.
+ */
+export function sidebarOrder(
+  repos: Repo[],
+  sessions: Session[],
+  localCollapsed: boolean
+): Session[] {
+  return [
+    ...(localCollapsed ? [] : gatheredByFolder(groupRows(sessions, null))),
+    ...repos.flatMap((repo) => (repo.collapsed ? [] : groupRows(sessions, repo.id)))
+  ]
+}
+
 interface GroupBodyProps {
   rows: Session[]
   archived: Session[]
@@ -353,10 +395,13 @@ interface SidebarProps {
   sourceLabel: string
   activeId: string | null
   now: number
+  /** Held by the shell, because the number chords count only the rows actually listed. */
+  localCollapsed: boolean
   onSelect: (id: string) => void
   onNewSession: (repoId?: string) => void
   /** Opens a folder with no repo behind it. */
   onNewLocal: () => void
+  onToggleLocal: () => void
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
   onRestore: (id: string) => void
@@ -375,9 +420,11 @@ export default function Sidebar({
   sourceLabel,
   activeId,
   now,
+  localCollapsed,
   onSelect,
   onNewSession,
   onNewLocal,
+  onToggleLocal,
   onToggleRepo,
   onAddRepo,
   onRestore,
@@ -386,7 +433,6 @@ export default function Sidebar({
   onRename,
   onOpenSettings
 }: SidebarProps): React.JSX.Element {
-  const [localCollapsed, setLocalCollapsed] = useState(false)
   const unseenSet = new Set(unseen)
   const rowProps = {
     agentStates,
@@ -399,7 +445,7 @@ export default function Sidebar({
     onDelete,
     onRename
   }
-  const localRows = sessions.filter((s) => isLocal(s) && !s.archived)
+  const localRows = groupRows(sessions, null)
   const localArchived = sessions
     .filter((s) => isLocal(s) && s.archived)
     .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
@@ -439,7 +485,7 @@ export default function Sidebar({
           <div className="repo-head">
             <button
               className="icon-btn-bare"
-              onClick={() => setLocalCollapsed((v) => !v)}
+              onClick={onToggleLocal}
               aria-label={localCollapsed ? 'Expand local' : 'Collapse local'}
             >
               <i className={`ph ph-caret-down repo-head__caret${localCollapsed ? ' is-collapsed' : ''}`} />
@@ -473,7 +519,7 @@ export default function Sidebar({
         )}
 
         {repos.map((repo) => {
-          const rows = sessions.filter((s) => s.repoId === repo.id && !s.archived)
+          const rows = groupRows(sessions, repo.id)
           const archived = sessions
             .filter((s) => s.repoId === repo.id && s.archived)
             .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))

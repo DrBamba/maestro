@@ -317,6 +317,51 @@ export function inside(rect: Rect, x: number, y: number): boolean {
 }
 
 /**
+ * The pane next to another one in a given direction, or null when there is nothing that way.
+ *
+ * Read off the geometry rather than off the tree, because the tree does not answer this question: in
+ * a column nested inside a row, the pane to the right of the top-left one is a cousin rather than a
+ * sibling. Measured on a unit board, so it needs no window.
+ *
+ * Where several panes lie that way, the nearest edge wins, and a tie between two stacked against the
+ * same edge goes to the one whose middle is closest — so moving right out of a tall pane lands
+ * beside where the eye already was rather than at the top of the next column.
+ */
+export function paneToward(
+  node: LayoutNode,
+  fromId: string,
+  toward: 'left' | 'right' | 'up' | 'down'
+): string | null {
+  const { frames } = computeFrames(node, { x: 0, y: 0, w: 1, h: 1 }, 0)
+  const from = frames.find((frame) => frame.id === fromId)
+  if (!from) return null
+
+  const horizontal = toward === 'left' || toward === 'right'
+  const back = toward === 'left' || toward === 'up'
+  // Along the direction of travel; across it for the tie-break.
+  const near = (r: Rect): number => (horizontal ? r.x : r.y)
+  const far = (r: Rect): number => (horizontal ? r.x + r.w : r.y + r.h)
+  const middle = (r: Rect): number => (horizontal ? r.y + r.h / 2 : r.x + r.w / 2)
+  const EPSILON = 1e-6
+
+  const candidates = frames.filter((frame) =>
+    back ? far(frame.rect) <= near(from.rect) + EPSILON : near(frame.rect) >= far(from.rect) - EPSILON
+  )
+  if (candidates.length === 0) return null
+
+  const distance = (r: Rect): number =>
+    back ? near(from.rect) - far(r) : near(r) - far(from.rect)
+
+  const best = candidates.reduce((winner, frame) => {
+    const gap = distance(frame.rect) - distance(winner.rect)
+    if (Math.abs(gap) > EPSILON) return gap < 0 ? frame : winner
+    const off = Math.abs(middle(frame.rect) - middle(from.rect))
+    return off < Math.abs(middle(winner.rect) - middle(from.rect)) ? frame : winner
+  })
+  return best.id
+}
+
+/**
  * Which zone of a frame a point is in. The nearest edge wins inside the outer fifth, so a corner
  * resolves to the edge it is actually closest to rather than to whichever was tested first.
  */

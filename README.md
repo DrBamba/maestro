@@ -128,6 +128,23 @@ two platforms bar one: how the window looks. The chrome is native there and Maes
 (see `data-platform` in [`main.tsx`](./src/renderer/src/main.tsx)), so judging *that* still means
 installing the `.deb` on a desktop VM.
 
+## Getting about
+
+Shift widens the jump: brackets alone move inside the session, and with shift they move between them.
+
+| | |
+| --- | --- |
+| `⌘[` `⌘]` | previous / next tab in the focused pane |
+| `⌘⇧[` `⌘⇧]` | previous / next session |
+| `⌘1`…`⌘8`, `⌘9` | a session by position; `⌘9` is the last one |
+| `⌘⇧←→↑↓` | the pane in that direction |
+| `⌘⇧A` | the next session asking for you, or finished unread |
+| `⌘K` `⌘N` | palette, new session |
+
+Inside the editor pane, tab and session jumps still work. `⌘⇧arrows` and `⌘K` stay VS Code's.
+
+On Linux, Ctrl stands in for ⌘, except the bracket chords: `Ctrl+[` is Escape in a terminal.
+
 ## Setup scripts
 
 A fresh worktree has no `node_modules` and no `.env`, so most repos need something run in it before
