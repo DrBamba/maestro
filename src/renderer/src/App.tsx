@@ -24,6 +24,7 @@ import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
 import RenameDialog from './components/RenameDialog'
 import RemoveRepoDialog from './components/RemoveRepoDialog'
+import DeleteFolderDialog from './components/DeleteFolderDialog'
 import SettingsDialog from './components/SettingsDialog'
 import Tooltip from './components/Tooltip'
 import type { EditorHandle } from './components/EditorPane'
@@ -42,6 +43,7 @@ type Overlay =
   | 'dispose'
   | 'rename'
   | 'removeRepo'
+  | 'deleteFolder'
   | 'settings'
   | null
 
@@ -69,6 +71,7 @@ export default function App(): React.JSX.Element {
   const [disposeTarget, setDisposeTarget] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
   const [removeRepoTarget, setRemoveRepoTarget] = useState<string | null>(null)
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const [openedIds, setOpenedIds] = useState<string[]>([])
@@ -231,6 +234,25 @@ export default function App(): React.JSX.Element {
       return result
     },
     [repos, sessions, notice]
+  )
+
+  const openDeleteFolder = useCallback((path: string) => {
+    setDeleteFolderTarget(path)
+    setOverlay('deleteFolder')
+  }, [])
+
+  const deleteLocalFolder = useCallback(
+    async (path: string, deleteFolder: boolean) => {
+      const touched = new Set(
+        sessions.filter((s) => isLocal(s) && s.worktreePath === path).map((s) => s.id)
+      )
+      const result = await window.maestro.sessions.deleteFolder(path, deleteFolder)
+      setOpenedIds((ids) => ids.filter((id) => !touched.has(id)))
+      setActiveId((current) => (current && touched.has(current) ? null : current))
+      if (result.ok) notice(deleteFolder ? 'Sessions and folder deleted' : 'Sessions deleted')
+      return result
+    },
+    [sessions, notice]
   )
 
   const createSession = useCallback(
@@ -677,6 +699,7 @@ export default function App(): React.JSX.Element {
         onToggleRepo={toggleRepo}
         onAddRepo={() => void addRepo()}
         onRemoveRepo={openRemoveRepo}
+        onDeleteLocalFolder={openDeleteFolder}
         onRestore={(id) => void restoreSession(id)}
         onArchive={(id) => openDispose(id, 'archive')}
         onDelete={(id) => openDispose(id, 'delete')}
@@ -811,6 +834,27 @@ export default function App(): React.JSX.Element {
           }
           onClose={() => setOverlay(null)}
           onRemove={(options) => removeRepo(removeRepoSubject.id, options)}
+        />
+      )}
+
+      {overlay === 'deleteFolder' && deleteFolderTarget && (
+        <DeleteFolderDialog
+          path={deleteFolderTarget}
+          name={deleteFolderTarget.replace(/\/+$/, '').split('/').pop() || deleteFolderTarget}
+          home={home}
+          busyCount={
+            sessions.filter((s) => {
+              const state = agentStates[s.id]?.state
+              return (
+                isLocal(s) &&
+                !s.archived &&
+                s.worktreePath === deleteFolderTarget &&
+                (state === 'working' || state === 'delegating')
+              )
+            }).length
+          }
+          onClose={() => setOverlay(null)}
+          onDelete={(deleteFolder) => deleteLocalFolder(deleteFolderTarget, deleteFolder)}
         />
       )}
 

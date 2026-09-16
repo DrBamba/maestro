@@ -50,6 +50,8 @@ import {
   relocateToWorktree,
   removeRepo,
   removeRepoPlan,
+  localFolderPlan,
+  deleteLocalFolder,
   runSetupScript,
   syncRelocatedHistory,
   localRoot,
@@ -546,6 +548,15 @@ export function registerIpc(): void {
 
   ipcMain.handle('session:dispose', async (_e, id: string, options: DisposeOptions) => {
     const result = await disposeSession(id, options)
+    pushSessions()
+    refreshBadge()
+    return result
+  })
+
+  ipcMain.handle('local:folderPlan', (_e, dir: string) => localFolderPlan(dir))
+
+  ipcMain.handle('local:deleteFolder', async (_e, dir: string, deleteFolder: boolean) => {
+    const result = await deleteLocalFolder(dir, deleteFolder)
     pushSessions()
     refreshBadge()
     return result

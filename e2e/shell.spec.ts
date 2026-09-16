@@ -1091,3 +1091,54 @@ test('the repo folder is not offered for deletion while a worktree Maestro does 
   expect(result.ok).toBe(false)
   expect(existsSync(repoPath)).toBe(true)
 })
+
+/** Opens two local sessions in one new folder, so the sidebar groups them. */
+async function openSharedFolder(window: Page, folder: string): Promise<void> {
+  await mkdir(folder, { recursive: true })
+  for (const name of ['first', 'second']) {
+    await window.click('[aria-label="New local session"]')
+    await window.click('.seg__opt:has-text("One I already have")')
+    await window.fill('#local-path', folder)
+    await window.fill('#local-name', name)
+    await window.click('.modal__actions .btn--primary')
+    await expect(window.locator('.modal')).toHaveCount(0, { timeout: 30_000 })
+  }
+  await expect(window.locator('.repo-group--local .folder-group')).toHaveCount(1)
+}
+
+test('a shared folder’s sessions can be deleted together, keeping the folder', async ({
+  window,
+  profileDir
+}) => {
+  const folder = join(profileDir, 'shared')
+  await openSharedFolder(window, folder)
+
+  await window.hover('.folder-head')
+  await window.click('[aria-label="Delete sessions in shared"]')
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await expect(dialog.locator('.outcome')).toContainText('2 sessions')
+  await expect(dialog.locator('.outcome')).toContainText('kept')
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(window.locator('.repo-group--local .session-row')).toHaveCount(0)
+  expect(existsSync(folder)).toBe(true)
+  // The note was only for while they shared it.
+  expect(existsSync(join(folder, '.claude', 'rules', 'maestro-shared-folder.md'))).toBe(false)
+})
+
+test('a shared folder can be deleted with its sessions', async ({ window, profileDir }) => {
+  const folder = join(profileDir, 'shared')
+  await openSharedFolder(window, folder)
+
+  await window.hover('.folder-head')
+  await window.click('[aria-label="Delete sessions in shared"]')
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await dialog.locator('.checkbox:has-text("Also delete the folder")').click()
+  await expect(dialog.locator('.outcome')).toContainText('deleted')
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(window.locator('.repo-group--local .session-row')).toHaveCount(0)
+  expect(existsSync(folder)).toBe(false)
+})

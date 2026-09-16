@@ -13,6 +13,7 @@ import type {
   ImportableWorktree,
   RelocatePlan,
   RelocateResult,
+  LocalFolderPlan,
   RemoveRepoOptions,
   RemoveRepoPlan,
   RepoFolderPlan,
@@ -1268,6 +1269,64 @@ export async function disposeSession(
     store.removeSession(sessionId)
   }
   if (isLocal(session)) await syncSharedFolderNote(session.worktreePath)
+  return { ok: true, commands }
+}
+
+/** Local sessions working in `dir`, open and archived. */
+function localSessionsIn(dir: string): Session[] {
+  return store.sessions.filter((s) => isLocal(s) && s.worktreePath === dir)
+}
+
+export async function localFolderPlan(dir: string): Promise<LocalFolderPlan> {
+  const sessions = localSessionsIn(dir)
+  const refusal = await folderRefusal(dir, (s) => isLocal(s) && s.worktreePath === dir)
+  return {
+    path: dir,
+    sessionIds: sessions.filter((s) => !s.archived).map((s) => s.id),
+    archivedIds: sessions.filter((s) => s.archived).map((s) => s.id),
+    canDeleteFolder: refusal === undefined,
+    folderRefusal: refusal,
+    madeByMaestro: sessions.length > 0 && sessions.every((s) => s.worktreeOwned)
+  }
+}
+
+/**
+ * Deletes every open session in a local folder, and with `deleteFolder` the folder and the archived
+ * sessions that pointed at it. Each session goes through {@link disposeSession}, so its Claude stops
+ * and the shared-folder note is kept in step exactly as for a single delete.
+ */
+export async function deleteLocalFolder(dir: string, deleteFolder: boolean): Promise<ArchiveResult> {
+  const commands: string[] = []
+  const plan = await localFolderPlan(dir)
+  if (deleteFolder && !plan.canDeleteFolder) {
+    return {
+      ok: false,
+      error: `Can’t delete the folder: ${plan.folderRefusal ?? 'not allowed'}.`,
+      commands
+    }
+  }
+
+  for (const id of plan.sessionIds) {
+    const result = await disposeSession(id, {
+      action: 'delete',
+      wip: 'leave',
+      deleteBranch: false,
+      allowForeign: false,
+      hardDelete: false
+    })
+    commands.push(...result.commands)
+    if (!result.ok) return { ok: false, error: result.error, commands }
+  }
+
+  if (deleteFolder) {
+    try {
+      commands.push(`rm -rf ${dir}`)
+      await rm(dir, { recursive: true, force: true })
+    } catch (err) {
+      return { ok: false, error: `Could not delete ${dir}: ${String(err)}`, commands }
+    }
+    for (const id of plan.archivedIds) store.removeSession(id)
+  }
   return { ok: true, commands }
 }
 

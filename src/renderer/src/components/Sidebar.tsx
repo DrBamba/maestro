@@ -149,6 +149,8 @@ interface GroupBodyProps {
   onArchive: (id: string) => void
   onDelete: (id: string) => void
   onRename: (id: string) => void
+  /** Deletes every session sharing a folder — only where sessions are grouped by folder. */
+  onDeleteFolder?: (path: string) => void
 }
 
 /** A folder's own name, which is what the user pointed Maestro at. */
@@ -174,7 +176,8 @@ function GroupBody({
   onRestore,
   onArchive,
   onDelete,
-  onRename
+  onRename,
+  onDeleteFolder
 }: GroupBodyProps): React.JSX.Element {
   const [showArchived, setShowArchived] = useState(false)
 
@@ -278,6 +281,16 @@ function GroupBody({
               <i className="ph ph-folder-simple" />
               <span className="folder-head__name">{folderName(session.worktreePath)}</span>
               <span className="folder-head__count">{shared.length}</span>
+              {onDeleteFolder && (
+                <button
+                  className="icon-btn-bare folder-head__delete"
+                  onClick={() => onDeleteFolder(session.worktreePath)}
+                  aria-label={`Delete sessions in ${folderName(session.worktreePath)}`}
+                  title="Delete these sessions…"
+                >
+                  <i className="ph ph-trash" />
+                </button>
+              )}
             </div>
             {shared.map((member) => renderRow(member, true))}
           </div>
@@ -360,6 +373,7 @@ interface SidebarProps {
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
   onRemoveRepo: (repoId: string) => void
+  onDeleteLocalFolder: (path: string) => void
   onRestore: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
@@ -382,6 +396,7 @@ export default function Sidebar({
   onToggleRepo,
   onAddRepo,
   onRemoveRepo,
+  onDeleteLocalFolder,
   onRestore,
   onArchive,
   onDelete,
@@ -465,6 +480,7 @@ export default function Sidebar({
               archived={localArchived}
               emptyText="No local sessions. + opens a folder to work in."
               groupByFolder
+              onDeleteFolder={onDeleteLocalFolder}
               {...rowProps}
             />
           )}

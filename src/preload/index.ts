@@ -21,6 +21,7 @@ import type {
   PrResult,
   PrStatus,
   Preferences,
+  LocalFolderPlan,
   RemoveRepoOptions,
   RemoveRepoPlan,
   Repo,
@@ -162,6 +163,11 @@ const api = {
       ipcRenderer.invoke('session:archivePlan', id),
     dispose: (id: string, options: DisposeOptions): Promise<ArchiveResult> =>
       ipcRenderer.invoke('session:dispose', id, options),
+    /** What deleting a shared local folder's sessions would do. */
+    folderPlan: (dir: string): Promise<LocalFolderPlan> => ipcRenderer.invoke('local:folderPlan', dir),
+    /** Deletes every open session in the folder, and the folder itself when asked. */
+    deleteFolder: (dir: string, deleteFolder: boolean): Promise<ArchiveResult> =>
+      ipcRenderer.invoke('local:deleteFolder', dir, deleteFolder),
     restore: (id: string): Promise<ArchiveResult> => ipcRenderer.invoke('session:restore', id),
     rename: (id: string, name: string): Promise<Session | undefined> =>
       ipcRenderer.invoke('session:rename', id, name)

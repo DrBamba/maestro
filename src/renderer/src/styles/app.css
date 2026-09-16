@@ -482,6 +482,15 @@ select {
   color: var(--color-neutral-600);
 }
 
+.folder-head__delete {
+  display: none;
+}
+
+.folder-head:hover .folder-head__delete,
+.folder-head:focus-within .folder-head__delete {
+  display: inline-flex;
+}
+
 .session-row--nested {
   padding-left: 24px;
 }

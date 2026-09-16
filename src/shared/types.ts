@@ -190,6 +190,20 @@ export type DisposeAction = 'archive' | 'delete'
 /** What to do with uncommitted work before the worktree is removed. */
 export type WipPlan = 'commit' | 'stash' | 'discard' | 'leave'
 
+/** What deleting a shared local folder's sessions would do, for its dialog. */
+export interface LocalFolderPlan {
+  path: string
+  /** Open sessions in the folder — the ones the sidebar groups under it. */
+  sessionIds: string[]
+  /** Archived ones there too, which only go if the folder does: nothing would be left to restore. */
+  archivedIds: string[]
+  canDeleteFolder: boolean
+  /** Why the folder cannot be deleted, when it cannot. */
+  folderRefusal?: string
+  /** Every session there was opened on a folder Maestro made. */
+  madeByMaestro: boolean
+}
+
 /** What deleting a repo's own folder would take with it. */
 export interface RepoFolderPlan {
   path: string
