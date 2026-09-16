@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LaunchSettings } from '@shared/types'
+import type { LaunchSettings, Session } from '@shared/types'
 import { homeRelative } from '../lib/format'
 import LaunchSettingsFields from './LaunchSettingsFields'
 import Modal from './Modal'
@@ -8,6 +8,8 @@ interface LocalSessionDialogProps {
   home: string
   /** Where Maestro makes a local session's folder — main decides the convention, not this dialog. */
   localRoot: string
+  /** Local sessions still open, so picking a folder one of them works in can say so. */
+  openLocal: Pick<Session, 'name' | 'worktreePath'>[]
   autoMode: boolean
   onAutoMode: (on: boolean) => void
   onClose: () => void
@@ -36,6 +38,7 @@ function lastSegment(path: string): string {
 export default function LocalSessionDialog({
   home,
   localRoot,
+  openLocal,
   autoMode,
   onAutoMode,
   onClose,
@@ -85,6 +88,17 @@ export default function LocalSessionDialog({
   const onEnter = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter') void submit()
   }
+
+  /*
+   * Matched on the path as typed, home-relative and without a trailing slash. A folder reached
+   * another way (a symlink, `..`) is still opened alongside; it just goes unannounced here.
+   */
+  const typedPath = path.trim().replace(/(.)\/+$/, '$1')
+  const sharedWith = existing
+    ? openLocal.find(
+        (s) => s.worktreePath === typedPath || homeRelative(s.worktreePath, home) === typedPath
+      )
+    : undefined
 
   /**
    * Where the folder goes, not what it will be called: the directory takes a random handle chosen
@@ -174,7 +188,13 @@ export default function LocalSessionDialog({
        * file appearing is a surprise. In a folder Maestro just made it is Maestro's own business.
        */}
       <div className="modal__note">
-        {existing ? (
+        {sharedWith ? (
+          <>
+            Opens a second agent beside “{sharedWith.name}”. Adds{' '}
+            <span style={{ fontFamily: 'var(--font-mono)' }}>.claude/rules/maestro-shared-folder.md</span>{' '}
+            telling both to mind each other. Restart “{sharedWith.name}” for it to read it.
+          </>
+        ) : existing ? (
           <>
             Runs Claude Code and the editor in that folder, in place. Adds{' '}
             <span style={{ fontFamily: 'var(--font-mono)' }}>.claude/settings.local.json</span> to

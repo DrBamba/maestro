@@ -32,6 +32,7 @@ import { randomHandle } from './handles'
 import { newestConversation } from './claudeHistory'
 import { titleWatcher } from './autoTitle'
 import { isBackground, setupCommand, setupScriptIn } from './setupScript'
+import { syncSharedFolderNote } from './sharedFolder'
 
 /**
  * PLAN.md open question 5 — worktree location convention. Worktrees live outside the repo, at
@@ -745,8 +746,17 @@ export async function createLocalSession(
     }
   }
 
-  const open = store.sessions.find((s) => isLocal(s) && s.worktreePath === dir && !s.archived)
-  if (open) return { error: `That folder is already open as “${open.name}”.` }
+  /*
+   * A folder already open in another session is opened again, not refused: several agents working
+   * one folder is a way of working, and the note below is what keeps them from trampling each
+   * other. Only the name is made distinct, so the sidebar can tell the sessions apart.
+   */
+  const taken = new Set(
+    store.sessions.filter((s) => isLocal(s) && !s.archived && s.worktreePath === dir).map((s) => s.name)
+  )
+  const base = trimmed || basename(dir) || dir
+  let name = base
+  for (let n = 2; taken.has(name); n++) name = `${base} ${n}`
 
   // The same hooks every other session gets — without them the sidebar dot for this session would
   // never move off idle.
@@ -755,7 +765,7 @@ export async function createLocalSession(
   const session: Session = {
     id: randomUUID(),
     repoId: LOCAL_REPO_ID,
-    name: trimmed || basename(dir) || dir,
+    name,
     branch: '',
     worktreePath: dir,
     createdAt: Date.now(),
@@ -787,6 +797,7 @@ export async function createLocalSession(
     effort: launch.effort
   }
   store.addSession(session)
+  await syncSharedFolderNote(dir)
   return { session }
 }
 
@@ -1256,6 +1267,7 @@ export async function disposeSession(
   } else {
     store.removeSession(sessionId)
   }
+  if (isLocal(session)) await syncSharedFolderNote(session.worktreePath)
   return { ok: true, commands }
 }
 
@@ -1407,6 +1419,7 @@ export async function restoreSession(sessionId: string): Promise<ArchiveResult> 
       restoredAt: Date.now(),
       lastActivity: Date.now()
     })
+    await syncSharedFolderNote(session.worktreePath)
     return { ok: true, commands: [] }
   }
 

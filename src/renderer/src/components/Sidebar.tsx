@@ -135,6 +135,11 @@ interface GroupBodyProps {
   archived: Session[]
   /** Shown when the group has nothing in it — a group is never silently blank. */
   emptyText: string
+  /**
+   * Sessions working in the same folder sit together under that folder's name. Only for Local:
+   * a repo session always has a worktree of its own, so nothing there could share one.
+   */
+  groupByFolder?: boolean
   agentStates: Record<string, AgentStatus>
   unseenSet: Set<string>
   activeId: string | null
@@ -146,6 +151,11 @@ interface GroupBodyProps {
   onRename: (id: string) => void
 }
 
+/** A folder's own name, which is what the user pointed Maestro at. */
+function folderName(path: string): string {
+  return path.replace(/\/+$/, '').split('/').pop() || path
+}
+
 /**
  * The rows under a group heading. Shared by the repos and by Local, so a local session behaves like
  * any other in the list — same dots, same hover actions, same archived drawer — rather than being a
@@ -155,6 +165,7 @@ function GroupBody({
   rows,
   archived,
   emptyText,
+  groupByFolder = false,
   agentStates,
   unseenSet,
   activeId,
@@ -167,74 +178,108 @@ function GroupBody({
 }: GroupBodyProps): React.JSX.Element {
   const [showArchived, setShowArchived] = useState(false)
 
+  const renderRow = (session: Session, nested = false): React.JSX.Element => {
+    const status = agentStates[session.id]
+    const state = status?.state ?? 'idle'
+    const dormant = isDormant(session, state, now)
+    return (
+      // A div, not a button: the row holds its own action buttons, and a button
+      // cannot legally contain buttons.
+      <div
+        key={session.id}
+        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(session.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect(session.id)
+          }
+        }}
+      >
+        <StateDot
+          state={state}
+          detail={status?.detail}
+          unseen={unseenSet.has(session.id)}
+          dormant={dormant}
+        />
+        <span className="session-row__name" data-tip={session.name}>
+          {session.name}
+        </span>
+        <span className="session-row__time">{relativeTime(session.lastActivity, now)}</span>
+        {/* Hidden until hover, except on sleeping rows where they are the point. */}
+        <span className="session-row__actions">
+          <button
+            className="session-row__action"
+            title="Rename session…"
+            aria-label={`Rename ${session.name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRename(session.id)
+            }}
+          >
+            <i className="ph ph-pencil-simple" />
+          </button>
+          <button
+            className="session-row__action"
+            title="Archive session…"
+            aria-label={`Archive ${session.name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onArchive(session.id)
+            }}
+          >
+            <i className="ph ph-archive" />
+          </button>
+          <button
+            className="session-row__action is-danger"
+            title="Delete session…"
+            aria-label={`Delete ${session.name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(session.id)
+            }}
+          >
+            <i className="ph ph-trash" />
+          </button>
+        </span>
+      </div>
+    )
+  }
+
+  /*
+   * A folder with one session is just a row. Two or more become one entry, placed where the first
+   * of them would have been, so the list keeps its order and only gathers.
+   */
+  const byFolder = new Map<string, Session[]>()
+  if (groupByFolder) {
+    for (const session of rows) {
+      byFolder.set(session.worktreePath, [...(byFolder.get(session.worktreePath) ?? []), session])
+    }
+  }
+  const placed = new Set<string>()
+
   return (
     <>
       {rows.map((session) => {
-        const status = agentStates[session.id]
-        const state = status?.state ?? 'idle'
-        const dormant = isDormant(session, state, now)
+        const shared = byFolder.get(session.worktreePath) ?? []
+        if (shared.length < 2) return renderRow(session)
+        if (placed.has(session.worktreePath)) return null
+        placed.add(session.worktreePath)
         return (
-          // A div, not a button: the row holds its own action buttons, and a button
-          // cannot legally contain buttons.
           <div
-            key={session.id}
-            className={`session-row${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(session.id)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                onSelect(session.id)
-              }
-            }}
+            className="folder-group"
+            key={`folder:${session.worktreePath}`}
+            role="group"
+            aria-label={session.worktreePath}
           >
-            <StateDot
-              state={state}
-              detail={status?.detail}
-              unseen={unseenSet.has(session.id)}
-              dormant={dormant}
-            />
-            <span className="session-row__name" data-tip={session.name}>
-              {session.name}
-            </span>
-            <span className="session-row__time">{relativeTime(session.lastActivity, now)}</span>
-            {/* Hidden until hover, except on sleeping rows where they are the point. */}
-            <span className="session-row__actions">
-              <button
-                className="session-row__action"
-                title="Rename session…"
-                aria-label={`Rename ${session.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRename(session.id)
-                }}
-              >
-                <i className="ph ph-pencil-simple" />
-              </button>
-              <button
-                className="session-row__action"
-                title="Archive session…"
-                aria-label={`Archive ${session.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onArchive(session.id)
-                }}
-              >
-                <i className="ph ph-archive" />
-              </button>
-              <button
-                className="session-row__action is-danger"
-                title="Delete session…"
-                aria-label={`Delete ${session.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete(session.id)
-                }}
-              >
-                <i className="ph ph-trash" />
-              </button>
-            </span>
+            <div className="folder-head" data-tip={session.worktreePath}>
+              <i className="ph ph-folder-simple" />
+              <span className="folder-head__name">{folderName(session.worktreePath)}</span>
+              <span className="folder-head__count">{shared.length}</span>
+            </div>
+            {shared.map((member) => renderRow(member, true))}
           </div>
         )
       })}
@@ -419,6 +464,7 @@ export default function Sidebar({
               rows={localRows}
               archived={localArchived}
               emptyText="No local sessions. + opens a folder to work in."
+              groupByFolder
               {...rowProps}
             />
           )}

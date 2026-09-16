@@ -7,7 +7,9 @@ Above the repos sits **Local**: a folder to work in with no repo behind it, for 
 not a feature branch. Say what you are working on and Maestro makes the folder — under
 `~/maestro/local`, beside the worktrees it cuts — hands Claude your message, and names the session
 from Claude's summary of it, exactly as a repo session does. Or point it at a folder you already
-have, which keeps the name you give it. Same terminal, same editor, no worktree and no branch, so
+have, which keeps the name you give it — as many sessions as you like, since a second one in the
+same folder adds `.claude/rules/maestro-shared-folder.md` telling every agent there to mind the
+others, and removes it again when one is left. Same terminal, same editor, no worktree and no branch, so
 reaching for a separate terminal outside Maestro is not the only option.
 
 Every tab in a session — Claude, the editor, each console, each script's output — **drags into a
