@@ -443,6 +443,39 @@ select {
   flex-shrink: 0;
 }
 
+/* Local sessions sharing one folder */
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 2px;
+  font: 500 12px var(--font-body);
+  color: var(--color-neutral-500);
+  min-width: 0;
+}
+
+.folder-head .ph {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.folder-head__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-head__count {
+  font-size: 11px;
+  color: var(--color-neutral-600);
+}
+
+.session-row--nested {
+  padding-left: 24px;
+}
+
 /* Archived sessions */
 .archived-toggle {
   display: flex;

@@ -69,6 +69,11 @@ interface SessionViewProps {
    * a directory with no transcripts starts a new conversation whatever this says.
    */
   resume: boolean
+  /**
+   * Another open local session works in this same folder. Its conversations sit beside this one's,
+   * so `--continue` could pick up the other agent's — the launcher asks instead.
+   */
+  sharedFolder: boolean
   /** Passed through to the launcher, which offers the auto-mode setting where Claude is started. */
   preferences: Preferences
   /**
@@ -91,6 +96,7 @@ export default function SessionView({
   active,
   home,
   resume,
+  sharedFolder,
   preferences,
   theme,
   onPreferences,
@@ -467,7 +473,7 @@ export default function SessionView({
    * interruption is stated instead of being something the user has to notice from cut-off output.
    */
   const wasInterrupted = session.interruptedAt !== undefined
-  const askFirst = !session.worktreeOwned || wasInterrupted
+  const askFirst = !session.worktreeOwned || wasInterrupted || (resume && sharedFolder)
 
   /*
    * A session created with a first message starts Claude *working*, so it must not start before the

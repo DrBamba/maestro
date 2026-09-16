@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { test, expect, confirmDispose } from './fixtures'
 
@@ -713,6 +713,54 @@ test('a local session can work in a folder that already exists', async ({ window
   // there Claude runs exactly as it does in a worktree.
   await window.click('.launcher .btn--primary')
   await expect.poll(() => activeClass(window), { timeout: 15_000 }).toContain('xterm-helper-textarea')
+})
+
+test('two local sessions can share a folder, and their agents are told about each other', async ({
+  window,
+  profileDir
+}) => {
+  const folder = join(profileDir, 'shared')
+  await mkdir(folder, { recursive: true })
+  const note = join(folder, '.claude', 'rules', 'maestro-shared-folder.md')
+
+  const open = async (name: string): Promise<void> => {
+    await window.click('[aria-label="New local session"]')
+    await window.click('.seg__opt:has-text("One I already have")')
+    await window.fill('#local-path', folder)
+    await window.fill('#local-name', name)
+  }
+
+  await open('first')
+  // One agent alone has nobody to mind.
+  await expect(window.locator('.modal__note')).not.toContainText('second agent')
+  await window.click('.modal__actions .btn--primary')
+  await expect(window.locator('.modal')).toHaveCount(0, { timeout: 30_000 })
+  expect(existsSync(note)).toBe(false)
+
+  // The second is opened, not refused — and the dialog says who it will be sharing with.
+  await open('second')
+  await expect(window.locator('.modal__note')).toContainText('beside “first”')
+  await window.click('.modal__actions .btn--primary')
+  await expect(window.locator('.modal')).toHaveCount(0, { timeout: 30_000 })
+
+  // Gathered under the folder they share, rather than as two unrelated rows.
+  const group = window.locator('.repo-group--local .folder-group')
+  await expect(group).toHaveCount(1)
+  await expect(group.locator('.folder-head__name')).toHaveText('shared')
+  await expect(group.locator('.session-row__name')).toHaveText(['first', 'second'])
+  expect(await readFile(note, 'utf8')).toContain('Other agents are working in this folder')
+
+  // Back to one agent, and the note goes with the need for it.
+  const row = window.locator('.repo-group--local .session-row', { hasText: 'second' })
+  await row.hover()
+  await row.locator('[aria-label="Delete second"]').click()
+  await window.locator('.modal .seg__opt:has-text("Delete")').click()
+  await confirmDispose(window)
+  await expect(window.locator('.modal')).toHaveCount(0)
+  await expect.poll(() => existsSync(note)).toBe(false)
+  // One session left is just a row again.
+  await expect(group).toHaveCount(0)
+  await expect(window.locator('.repo-group--local .session-row__name')).toHaveText(['first'])
 })
 
 test('deleting a local session promises to leave the folder alone', async ({ window }) => {

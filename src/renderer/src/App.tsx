@@ -656,6 +656,16 @@ export default function App(): React.JSX.Element {
             // Age is the usual test, but a session archived and restored in this same run is
             // younger than the app and still has a conversation waiting for it.
             resume={session.createdAt < appStartedAt || session.restoredAt !== undefined}
+            sharedFolder={
+              isLocal(session) &&
+              sessions.some(
+                (s) =>
+                  s.id !== session.id &&
+                  isLocal(s) &&
+                  !s.archived &&
+                  s.worktreePath === session.worktreePath
+              )
+            }
             preferences={preferences}
             theme={theme}
             onPreferences={(patch) => void updatePreferences(patch)}
@@ -716,6 +726,7 @@ export default function App(): React.JSX.Element {
         <LocalSessionDialog
           home={home}
           localRoot={localRoot}
+          openLocal={sessions.filter((s) => isLocal(s) && !s.archived)}
           autoMode={preferences.permissionMode === 'auto'}
           onAutoMode={(on) => void updatePreferences({ permissionMode: on ? 'auto' : undefined })}
           onClose={() => setOverlay(null)}
