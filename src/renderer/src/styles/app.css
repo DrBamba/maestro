@@ -1,0 +1,1893 @@
+/* Maestro shell — every value comes from theme.css tokens. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--shell-bg);
+  color: var(--color-text);
+  font: 400 15px/1.55 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-800);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-700);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner,
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes toastin {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ══ shell ══════════════════════════════════════════════════════════ */
+
+.app {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+/*
+ * A non-stable instance is marked at the window edge, where it is visible no matter which part of
+ * the UI is being looked at. Amber rather than the accent, so it never reads as a normal state.
+ */
+:root[data-profile='dev'] .app::after,
+:root[data-profile='custom'] .app::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  border: 2px solid var(--status-pending);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+:root[data-profile='dev'] .sidebar,
+:root[data-profile='custom'] .sidebar {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--status-pending) 10%, var(--shell-sidebar-top)) 0%,
+    var(--shell-bg) 40%
+  );
+}
+
+/* ══ sidebar ════════════════════════════════════════════════════════ */
+
+.sidebar {
+  width: 264px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--hairline);
+  background: linear-gradient(180deg, var(--shell-sidebar-top) 0%, var(--shell-bg) 40%);
+}
+
+/*
+ * Real macOS window controls sit here; the wordmark clears them. Everywhere else the window keeps
+ * its own title bar, so there is nothing to clear and the wordmark starts at the normal inset —
+ * the row stays draggable either way, which costs nothing and matches how it behaves on mac.
+ */
+.sidebar__titlebar {
+  display: flex;
+  align-items: center;
+  padding: 18px 18px 14px;
+  -webkit-app-region: drag;
+}
+
+[data-platform='mac'] .sidebar__titlebar {
+  padding-left: 80px;
+}
+
+.sidebar__wordmark {
+  font: 500 13px var(--font-heading);
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-500);
+}
+
+/*
+ * Marks an instance running on a separate data directory, so two windows are tellable apart.
+ *
+ * Cut out of the drag region above. A drag region hands the mouse to the window manager, so the
+ * badge got no hover of its own and its tooltip — the only place the whole name is readable —
+ * never appeared.
+ */
+.sidebar__profile {
+  -webkit-app-region: no-drag;
+  cursor: default;
+  margin-left: 8px;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 10px var(--font-heading);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--shell-bg);
+  background: var(--status-pending);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+
+/* A session name is prose, not a keyword: no uppercasing, and every pixel spent on tracking is a
+   character lost to the ellipsis. It takes the row the wordmark gave up, and what still does not
+   fit is on the tooltip. */
+.sidebar__profile--source {
+  margin-left: 0;
+  max-width: none;
+  min-width: 0;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 11px;
+}
+
+.sidebar__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.repo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.repo-head + .repo-head,
+.repo-group + .repo-group .repo-head {
+  padding-top: 14px;
+}
+
+.repo-head__caret {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+  transition: transform 0.12s ease;
+}
+
+.repo-head__caret.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.repo-head__name {
+  font: 500 12px var(--font-heading);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn-bare {
+  font-size: 15px;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  border-radius: var(--radius-sm);
+}
+
+.icon-btn-bare:hover {
+  color: var(--color-neutral-300);
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+}
+
+.session-row:hover {
+  background: var(--hover);
+}
+
+.session-row.is-active {
+  background: var(--hover-strong);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.session-row__name {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-neutral-400);
+}
+
+.session-row.is-active .session-row__name {
+  color: var(--color-text);
+}
+
+.session-row__time {
+  font: 400 12px var(--font-body);
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+/*
+ * One box for every state, disc or symbol alike, so a row does not shift as its session moves from
+ * one stage to the next. Colour lives here and the disc inherits it, which keeps each state below
+ * to the one line that says what it is.
+ */
+.dot {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Matched to the box: a Phosphor glyph sits inside its em with room to spare. */
+  font-size: 12px;
+  line-height: 1;
+  color: var(--dot-done);
+}
+
+.dot__disc {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dot.is-working {
+  color: var(--dot-working);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/*
+ * Handed to a sub-agent: the same pulse, because it is still live work, on an arrow pointing away
+ * from Claude itself. Motion says the session is not waiting on you; the arrow says the work is
+ * not Claude's own — which the dot alone could only have said as another shade of the same colour.
+ */
+.dot.is-delegating {
+  color: var(--dot-working);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/*
+ * The states that want the user, after the user has been.
+ *
+ * The symbol stays, because the session still wants what it wanted — a question you have read is
+ * still a question. Only the light goes out, and being lit means one thing: you have not seen it
+ * yet. Which also means a session that reports nothing for a while, because Claude Code says
+ * nothing between a permission being granted and the tool it unblocked finishing, sits there
+ * quietly showing what it last knew rather than shouting it.
+ */
+.dot.is-attention,
+.dot.is-done,
+.dot.is-interrupted,
+.dot.is-error {
+  color: var(--dot-seen);
+}
+
+.dot.is-attention.is-unseen {
+  color: var(--dot-attention);
+  text-shadow:
+    0 0 4px color-mix(in srgb, var(--color-accent-300) 70%, transparent),
+    0 0 11px color-mix(in srgb, var(--color-accent-300) 55%, transparent);
+}
+
+/* Unseen results are the ones the chime was about. */
+.dot.is-done.is-unseen {
+  color: var(--dot-done-unseen);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--dot-done-unseen) 45%, transparent);
+}
+
+/* Stopped without finishing: the one hue outside the accent, for the one state nobody chose. */
+.dot.is-interrupted.is-unseen {
+  color: var(--dot-interrupted);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--dot-interrupted) 45%, transparent);
+}
+
+/* An API error ended the turn — the same hue, because it is the same kind of bad news. */
+.dot.is-error.is-unseen {
+  color: var(--dot-error);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--dot-error) 45%, transparent);
+}
+
+/* Sleeping sessions: nothing has happened here for hours, so the live state is stale anyway. */
+.dot-sleep {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 9px var(--font-heading);
+  line-height: 1;
+  color: var(--color-neutral-600);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+
+.session-row.is-dormant .session-row__name,
+.session-row.is-dormant .session-row__time {
+  color: var(--color-neutral-700);
+}
+
+/* Row actions — revealed on hover or focus, and always shown on a sleeping row, where the
+   suggestion to clean it up is the whole point. */
+.session-row__actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.session-row:hover .session-row__actions,
+.session-row:focus-within .session-row__actions,
+.session-row.is-dormant .session-row__actions {
+  display: inline-flex;
+}
+
+/* The timestamp gives way rather than the name being truncated further. */
+.session-row:hover .session-row__time,
+.session-row:focus-within .session-row__time,
+.session-row.is-dormant .session-row__time {
+  display: none;
+}
+
+.session-row__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.session-row__action:hover {
+  color: var(--color-text);
+  background: var(--wash);
+}
+
+.session-row__action.is-danger:hover {
+  color: var(--status-del);
+  background: color-mix(in srgb, var(--status-del) 14%, transparent);
+}
+
+.session-row__unseen {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent-300);
+  flex-shrink: 0;
+}
+
+/* Archived sessions */
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  font: 500 11px var(--font-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.archived-toggle:hover {
+  color: var(--color-neutral-400);
+}
+
+.session-row.is-archived .session-row__name {
+  color: var(--color-neutral-600);
+}
+
+.session-row__restore {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.session-row__restore:hover {
+  color: var(--color-accent-300);
+}
+
+.session-row__restore.is-danger:hover {
+  color: var(--status-del);
+}
+
+/* Restore and delete read as a pair of actions, so they sit closer to each other than to the name. */
+.session-row__restore + .session-row__restore {
+  margin-left: -4px;
+}
+
+/* Nothing running here: the disc is drawn as an outline rather than filled. */
+.dot.is-idle .dot__disc {
+  background: var(--color-neutral-900);
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+
+.sidebar__foot {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.sidebar__empty {
+  padding: 18px 12px;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  line-height: 1.6;
+}
+
+/* ══ buttons ════════════════════════════════════════════════════════ */
+
+/* Nocturne outlines its primary action rather than filling it. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: 500 13px var(--font-heading);
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn:active {
+  background: color-mix(in srgb, var(--color-accent-400) 12%, transparent);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  border-color: var(--edge-loud);
+}
+
+.btn--block {
+  flex: 1;
+}
+
+.btn--ghost {
+  border-color: transparent;
+  color: var(--color-neutral-500);
+}
+
+.btn--ghost:hover {
+  color: var(--color-text);
+  background: transparent;
+}
+
+.btn--small {
+  font-size: 12px;
+  padding: 6px 11px;
+  gap: 7px;
+  color: var(--color-neutral-400);
+}
+
+.btn--small:hover {
+  border-color: var(--edge-loud);
+  color: var(--color-text);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-neutral-500);
+  background: transparent;
+  border: 1px solid var(--edge-strong);
+  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  border-color: var(--edge-loud);
+  color: var(--color-text);
+}
+
+/* ══ segmented control ══════════════════════════════════════════════ */
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.seg__opt {
+  font: 500 12px var(--font-heading);
+  padding: 4px 11px;
+  cursor: pointer;
+  color: var(--color-neutral-500);
+  background: transparent;
+  border: 0;
+}
+
+.seg__opt + .seg__opt {
+  border-left: 1px solid var(--edge);
+}
+
+.seg__opt.is-on {
+  color: var(--color-text);
+  background: var(--seg-on);
+}
+
+.seg--lg {
+  border-radius: var(--radius-md);
+}
+
+.seg--lg .seg__opt {
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
+/* ══ tabs ═══════════════════════════════════════════════════════════ */
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  border-bottom: 1px solid var(--hairline-strong);
+  flex-shrink: 0;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px var(--font-heading);
+  padding: 0 12px;
+  cursor: pointer;
+  color: var(--color-neutral-500);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  white-space: nowrap;
+  /* A press on a tab is a click or a drag; either way it must not select the label. */
+  user-select: none;
+}
+
+.tab:hover {
+  color: var(--color-neutral-300);
+}
+
+.tab.is-on {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+
+/* The tab being dragged stays in its strip, dimmed, so the row it came from keeps its shape. */
+.tab.is-lifted {
+  opacity: 0.35;
+}
+
+/* Sits where the label was, so naming a console does not shift the tabs beside it. */
+.tab__rename {
+  width: 9ch;
+  padding: 0 4px;
+  border: 1px solid var(--color-accent-600);
+  border-radius: 4px;
+  outline: none;
+  background: var(--shell-bg);
+  font: 500 13px var(--font-heading);
+  color: var(--color-text);
+}
+
+.tab--add {
+  padding: 0 9px;
+  color: var(--color-neutral-600);
+}
+
+.tab__close {
+  font-size: 11px;
+  color: var(--color-neutral-600);
+  border-radius: 3px;
+}
+
+.tab__close:hover {
+  color: var(--color-text);
+}
+
+/* ══ session view ═══════════════════════════════════════════════════ */
+
+.session {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.session__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 28px 10px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.session__header button,
+.session__header input {
+  -webkit-app-region: no-drag;
+}
+
+.session__title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.session__title {
+  font: 500 16px/1.2 var(--font-heading);
+  letter-spacing: -0.015em;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 44%;
+}
+
+.session__meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--color-neutral-500);
+  min-width: 0;
+}
+
+.session__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session__meta-item i {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.session__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  /* The margins the single pane used to carry itself, now the ground every pane is laid out in. */
+  padding: 16px 24px 18px 28px;
+}
+
+.session__footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 28px 14px;
+  font-size: 12.5px;
+  color: var(--color-neutral-500);
+  border-top: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.session__footer-path {
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.session__footer-path:hover {
+  color: var(--color-neutral-400);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.run-state i {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+/* ══ the board ══════════════════════════════════════════════════════ */
+
+/*
+ * Every pane is placed by rectangle rather than by flex, and lives in one flat list for the whole
+ * life of the session. A pane holds a running process or an entire embedded editor, and moving
+ * either one in the DOM restarts it — so rearranging moves rectangles and nothing is reparented.
+ */
+.board {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.board__frame {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--shell-embed);
+  overflow: hidden;
+}
+
+/*
+ * Which pane the keyboard is in — an edge, not a fill: the embeds are the brightest surfaces on
+ * screen and nothing may tint them. Its tab keeps the accent under it; the other panes' front tabs
+ * go grey, so the accent means "typing lands here" and not merely "this is the tab on show".
+ */
+.board__frame.is-focused {
+  border-color: var(--edge-strong);
+}
+
+.board__frame:not(.is-focused) .tab.is-on {
+  border-bottom-color: var(--color-neutral-700);
+}
+
+.board__strip {
+  height: var(--strip-h);
+  padding: 0 4px;
+  background: var(--shell-panel);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.board__strip::-webkit-scrollbar {
+  height: 0;
+}
+
+/* The ground a pane is drawn over, and what shows while its embed is still starting. */
+.board__well {
+  flex: 1;
+  min-height: 0;
+}
+
+.board__pane {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0 0 9px 9px;
+}
+
+/* ── the edges between panes ─────────────────────────────────────── */
+
+.board__gutter {
+  position: absolute;
+  z-index: 2;
+}
+
+/* Wider than the channel is drawn, so the edge is easy to catch. */
+.board__gutter::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+
+.board__gutter::before {
+  content: '';
+  position: absolute;
+  background: var(--hairline);
+  border-radius: 2px;
+}
+
+.board__gutter--row {
+  cursor: col-resize;
+}
+
+.board__gutter--column {
+  cursor: row-resize;
+}
+
+.board__gutter--row::before {
+  top: 10%;
+  bottom: 10%;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-1px);
+}
+
+.board__gutter--column::before {
+  left: 10%;
+  right: 10%;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-1px);
+}
+
+.board__gutter:hover::before,
+.board__gutter:focus-visible::before {
+  background: var(--color-accent);
+}
+
+/* ── dragging a tab ──────────────────────────────────────────────── */
+
+/*
+ * Up for the length of any drag. Each embed is a program of its own and takes the pointer the
+ * moment it crosses one, which would otherwise end the drag over the editor.
+ */
+.board__shield {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.board__shield--drag {
+  cursor: grabbing;
+}
+
+.board__shield--col {
+  cursor: col-resize;
+}
+
+.board__shield--row {
+  cursor: row-resize;
+}
+
+/* Where the pane would land: the whole frame to join it, half of it to split it. */
+.board__drop {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.board__caret {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-accent);
+}
+
+.board__ghost {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  background: var(--shell-toast);
+  box-shadow: var(--shadow-toast);
+  font: 500 12.5px var(--font-heading);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.board__ghost i {
+  font-size: 14px;
+  color: var(--color-neutral-500);
+}
+
+/* ══ embed surfaces ═════════════════════════════════════════════════ */
+
+/* The dashed hatch the design uses for a not-yet-live embed. */
+.embed-placeholder {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px dashed var(--edge-strong);
+  background:
+    repeating-linear-gradient(45deg, var(--hatch) 0 14px, transparent 14px 28px),
+    var(--shell-embed);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.embed-placeholder i {
+  font-size: 34px;
+  color: var(--color-neutral-600);
+}
+
+.embed-placeholder__title {
+  font: 500 14px var(--font-mono);
+  color: var(--color-neutral-300);
+}
+
+.embed-placeholder__note {
+  font: 400 13px var(--font-mono);
+  color: var(--color-neutral-600);
+  max-width: 560px;
+  line-height: 1.6;
+}
+
+
+
+
+
+/* ══ terminal ═══════════════════════════════════════════════════════ */
+
+.term {
+  position: absolute;
+  inset: 0;
+  padding: 10px 12px;
+}
+
+.term .xterm {
+  height: 100%;
+}
+
+.term .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+/* ══ editor ═════════════════════════════════════════════════════════ */
+
+/* Squared off: the pane it sits in carries the corners now. */
+.editor__surface {
+  flex: 1;
+  overflow: hidden;
+  background: var(--shell-embed);
+  position: relative;
+  min-height: 0;
+}
+
+.editor__surface webview {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  background: var(--shell-embed);
+}
+
+/* ══ overlays ═══════════════════════════════════════════════════════ */
+
+/*
+ * An overlay must cancel the drag regions it covers. macOS resolves `-webkit-app-region: drag`
+ * from the region geometry alone — being painted underneath an overlay does not exempt it — so a
+ * press inside one becomes a window drag and no click ever reaches the DOM. Both regions below
+ * ".empty" and ".session__header" span the area a dialog opens over, which left "Create session"
+ * unclickable while Enter, going to the focused field, still worked.
+ */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  justify-content: center;
+  z-index: 20;
+  -webkit-app-region: no-drag;
+}
+
+.scrim--top {
+  align-items: flex-start;
+  padding-top: 120px;
+}
+
+.scrim--center {
+  align-items: center;
+}
+
+.modal {
+  background: var(--shell-overlay);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal--dialog {
+  padding: 24px;
+  gap: 18px;
+}
+
+.modal__title {
+  font: 500 17px var(--font-heading);
+  color: var(--color-text);
+}
+
+.modal__sub {
+  font: 400 13px var(--font-body);
+  color: var(--color-neutral-500);
+}
+
+.modal__note {
+  font: 400 12.5px var(--font-body);
+  color: var(--color-neutral-600);
+  line-height: 1.6;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal__error {
+  font: 400 12.5px var(--font-body);
+  color: var(--status-del);
+  line-height: 1.6;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field > label {
+  font: 500 12px var(--font-heading);
+  color: var(--color-neutral-500);
+}
+
+/* Says what is still happening to a field's own options, under the field it belongs to. */
+.field__hint {
+  font: 400 11.5px var(--font-body);
+  color: var(--color-neutral-500);
+}
+
+/* A field with a button beside it — the input takes what the button leaves. */
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field__row .btn {
+  flex-shrink: 0;
+}
+
+.input {
+  background: var(--shell-bg);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  outline: none;
+  padding: 9px 12px;
+  font: 400 14px var(--font-body);
+  color: var(--color-text);
+  width: 100%;
+}
+
+.input:focus-visible {
+  border-color: var(--color-accent-600);
+}
+
+/* Native select, themed to match the text fields — the caret is drawn since appearance is off. */
+select.input {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--color-neutral-500) 50%),
+    linear-gradient(135deg, var(--color-neutral-500) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) calc(50% + 2px),
+    calc(100% - 12px) calc(50% + 2px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+select.input:hover {
+  border-color: var(--edge-strong);
+}
+
+.textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+/* Sized by its own content instead: one line to begin with, taller as it is typed into. The drag
+   handle would fight that, so it goes — there is nothing left for it to do. Overflow is set from
+   the script that does the sizing, since only it knows whether the height it wanted was granted. */
+.textarea--grow {
+  min-height: 0;
+  resize: none;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+
+/* Stays legible rather than hiding: the reason it is unavailable is written in the label. */
+.checkbox:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.checkbox__box {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--edge-loud);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.checkbox__box.is-on {
+  background: var(--color-accent-300);
+  border-color: var(--color-accent-300);
+}
+
+.checkbox__box i {
+  font-size: 11px;
+  color: var(--shell-bg);
+}
+
+.checkbox__label {
+  font: 400 13.5px var(--font-body);
+  color: var(--color-neutral-300);
+  /* Branch and path names have no spaces to break at, and a long one would otherwise run out of
+     the dialog rather than wrapping inside it. */
+  overflow-wrap: anywhere;
+}
+
+/* ══ disclosure ═════════════════════════════════════════════════════ */
+
+/* A row of settings folded away until asked for — the caret is the whole affordance. */
+.launch-settings,
+.disclosure__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: 500 12px var(--font-heading);
+  color: var(--color-neutral-500);
+}
+
+.disclosure:hover {
+  color: var(--color-neutral-300);
+}
+
+.disclosure i {
+  font-size: 12px;
+}
+
+/* What has been chosen, so a folded panel never hides a setting that differs from the default. */
+.disclosure__summary {
+  font: 400 12px var(--font-body);
+  color: var(--color-accent-300);
+}
+
+/* Before/after, so the outcome is stated rather than inferred from the commands. */
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.outcome__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.outcome__where {
+  font: 400 11.5px var(--font-mono);
+  color: var(--color-neutral-400);
+  flex-shrink: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outcome__what {
+  color: var(--color-neutral-500);
+  min-width: 0;
+}
+
+.outcome__what b {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* Exact commands, shown before anything destructive runs. */
+.cmd-block {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--shell-embed);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  font: 400 11.5px/1.7 var(--font-mono);
+  color: var(--color-neutral-300);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+/* A destructive opt-in that goes beyond what Maestro created. */
+.checkbox--warn .checkbox__label {
+  color: var(--status-del);
+}
+
+.checkbox--warn .checkbox__label i {
+  margin-right: 4px;
+}
+
+.checkbox--warn .checkbox__box {
+  border-color: color-mix(in srgb, var(--status-del) 55%, transparent);
+}
+
+.checkbox--warn .checkbox__box.is-on {
+  background: var(--status-del);
+  border-color: var(--status-del);
+}
+
+.checkbox:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A render failure is shown rather than blanking the window. */
+.crash {
+  position: fixed;
+  inset: 0;
+  background: var(--shell-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  z-index: 100;
+}
+
+.crash__card {
+  width: 100%;
+  max-width: 620px;
+  background: var(--shell-overlay);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crash .launcher__head > i {
+  color: var(--status-del);
+}
+
+/* ══ claude launcher ════════════════════════════════════════════════ */
+
+.launcher {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--shell-embed) 88%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 5;
+}
+
+.launcher__card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--shell-overlay);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.launcher__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.launcher__head > i {
+  font-size: 22px;
+  color: var(--color-neutral-500);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.launcher__title {
+  font: 500 16px var(--font-heading);
+  color: var(--color-text);
+}
+
+.launcher__sub {
+  font: 400 12.5px/1.6 var(--font-body);
+  color: var(--color-neutral-500);
+  margin-top: 2px;
+}
+
+.launcher__empty {
+  font: 400 12.5px var(--font-body);
+  color: var(--color-neutral-600);
+  padding: 4px 2px;
+}
+
+.launcher__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.launcher__row:hover {
+  background: var(--hover);
+  border-color: var(--hairline-strong);
+}
+
+.launcher__row > i {
+  font-size: 14px;
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.launcher__row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.launcher__row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px var(--font-heading);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher__row-prompt {
+  font: 400 11.5px var(--font-body);
+  color: var(--color-neutral-600);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher__live {
+  font: 500 10.5px var(--font-heading);
+  color: var(--status-pending);
+  background: color-mix(in srgb, var(--status-pending) 14%, transparent);
+  border-radius: 7px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
+.launcher__row-meta {
+  font: 400 11.5px var(--font-mono);
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.launcher__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+/* ══ import worktree ════════════════════════════════════════════════ */
+
+.import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0 -8px;
+}
+
+.import-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.import-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.import-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.import-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.import-row__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 13.5px var(--font-heading);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-row__branch i {
+  font-size: 14px;
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.import-row__path {
+  font: 400 11.5px var(--font-mono);
+  color: var(--color-neutral-600);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.import-row__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.import-row__primary {
+  font: 500 11px var(--font-heading);
+  border-radius: 8px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  color: var(--status-pending);
+  background: color-mix(in srgb, var(--status-pending) 12%, transparent);
+}
+
+.import-row__repo,
+.import-row__wip,
+.import-row__history,
+.import-row__nohistory {
+  font: 500 11px var(--font-heading);
+  border-radius: 8px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.import-row__repo {
+  color: var(--color-neutral-400);
+  background: var(--wash);
+}
+
+.import-row__wip {
+  color: var(--status-add);
+  background: color-mix(in srgb, var(--status-add) 12%, transparent);
+}
+
+.import-row__history {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-accent-300);
+  background: var(--color-accent-900);
+}
+
+.import-row__history i {
+  font-size: 12px;
+}
+
+.import-row__nohistory {
+  color: var(--color-neutral-600);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-neutral-800);
+}
+
+.modal__link {
+  font: 400 12.5px var(--font-body);
+  color: var(--color-neutral-500);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  align-self: flex-start;
+}
+
+.modal__link:hover {
+  color: var(--color-accent-300);
+}
+
+/* ══ command palette ════════════════════════════════════════════════ */
+
+.palette {
+  width: 560px;
+  max-width: calc(100vw - 80px);
+}
+
+.palette__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline-strong);
+}
+
+.palette__search i {
+  font-size: 16px;
+  color: var(--color-neutral-600);
+}
+
+.palette__input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: 400 14.5px var(--font-body);
+  color: var(--color-text);
+}
+
+.kbd {
+  font: 500 11px var(--font-heading);
+  color: var(--color-neutral-600);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.palette__list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.palette__item:hover,
+.palette__item.is-cursor {
+  background: var(--hover);
+}
+
+.palette__item i {
+  font-size: 16px;
+  color: var(--color-neutral-500);
+  flex-shrink: 0;
+}
+
+.palette__label {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette__hint {
+  font: 400 12px var(--font-body);
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.palette__empty {
+  padding: 18px 12px;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  text-align: center;
+}
+
+/* ══ checks / toast ═════════════════════════════════════════════════ */
+
+.checks {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font: 400 12.5px var(--font-body);
+  color: var(--color-neutral-500);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.check__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-neutral-700);
+}
+
+.check__dot.is-passed {
+  background: var(--status-add);
+}
+.check__dot.is-failed {
+  background: var(--status-del);
+}
+.check__dot.is-pending {
+  background: var(--status-pending);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  background: var(--shell-toast);
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  padding: 10px 18px;
+  font: 500 13px var(--font-heading);
+  color: var(--color-text);
+  box-shadow: var(--shadow-toast);
+  z-index: 30;
+  animation: toastin 0.18s ease-out;
+  max-width: 70%;
+  text-align: center;
+}
+
+/*
+ * The rest of whatever is too narrow to show it — a session row's name, the dev tag, the header.
+ * Positioned in script against the element it belongs to, so it stays put while the pointer moves
+ * along the text rather than trailing the cursor, and fixed so the sidebar's own scroll box cannot
+ * clip it — escaping a container that clips text is the whole point.
+ */
+.tooltip {
+  position: fixed;
+  /* Above the sidebar, below the scrim: a dialog opening under a live hover must still cover it. */
+  z-index: 15;
+  max-width: 300px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background: var(--shell-overlay);
+  border: 1px solid var(--edge);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  font: 400 13px var(--font-body);
+  color: var(--color-text);
+  /* Wraps, because a tip that ellipses the text is no better than the element was. */
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.tooltip__hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--color-neutral-500);
+}
+
+/* ══ empty state ════════════════════════════════════════════════════ */
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 48px;
+  text-align: center;
+  -webkit-app-region: drag;
+}
+
+.empty button {
+  -webkit-app-region: no-drag;
+}
+
+/* The link form is left-aligned inside dialogs; here the column is centred, so it follows. */
+.empty .modal__link {
+  align-self: center;
+}
+
+.empty i {
+  font-size: 40px;
+  color: var(--color-neutral-700);
+}
+
+.empty__title {
+  font: 500 18px var(--font-heading);
+  color: var(--color-text);
+}
+
+.empty__body {
+  font-size: 13.5px;
+  color: var(--color-neutral-500);
+  max-width: 420px;
+  line-height: 1.7;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-neutral-700);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}

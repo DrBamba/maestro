@@ -1,0 +1,219 @@
+/*
+ * Nocturne — the project's design system, ported from the design project's styles.css.
+ * Ramp values are verbatim from Nocturne's theme so the shell and the embedded VS Code theme
+ * stay in step (PLAN.md §7, the theming seam).
+ *
+ * The app chrome sits on a darker ground than Nocturne's page ground: an IDE shell needs the
+ * terminal and editor embeds to read as the brightest thing on screen. The --shell-* tokens
+ * below are that layer; everything else comes straight from the system.
+ *
+ * Dark is the ground this was designed on and stays the default. Light is the same shell with the
+ * ramps turned around, at the bottom of this file — every rule in app.css is written against these
+ * tokens and none of them mentions a colour, so the whole shell follows from swapping them.
+ */
+
+:root {
+  /* Native form controls, the select popup and the default scrollbars follow this. */
+  color-scheme: dark;
+
+  /* ── Nocturne roles ─────────────────────────────────────────────── */
+  --color-bg: #161826;
+  --color-surface: #232532;
+  --color-text: #e9e9ed;
+  --color-accent: #9184d9;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+
+  --color-neutral-100: #f3f5fe;
+  --color-neutral-200: #e4e7f5;
+  --color-neutral-300: #cfd3e5;
+  --color-neutral-400: #b2b6ca;
+  --color-neutral-500: #9397ab;
+  --color-neutral-600: #75798c;
+  --color-neutral-700: #595d6c;
+  --color-neutral-800: #3f424d;
+  --color-neutral-900: #292b31;
+
+  --color-accent-100: #f5f4ff;
+  --color-accent-200: #e7e5fe;
+  --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294;
+  --color-accent-800: #423a6a;
+  --color-accent-900: #2b2741;
+
+  /* ── Type ───────────────────────────────────────────────────────── */
+  --font-heading: 'Inter', system-ui, sans-serif;
+  --font-heading-weight: 500;
+  --font-body: 'Inter', system-ui, sans-serif;
+  /*
+   * The Linux names are not decoration: `ui-monospace` and the two after it resolve on macOS and
+   * nowhere else, so without them Ubuntu falls all the way through to the generic `monospace` —
+   * DejaVu Sans Mono, which is wider than the terminal's metrics assume.
+   */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, 'JetBrains Mono', 'Cascadia Mono',
+    'Ubuntu Sans Mono', 'DejaVu Sans Mono', monospace;
+
+  /* ── Spacing (Nocturne density 0.70×) ───────────────────────────── */
+  --space-1: 2.8px;
+  --space-2: 5.6px;
+  --space-3: 8.4px;
+  --space-4: 11.2px;
+  --space-6: 16.8px;
+  --space-8: 22.4px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 0 0 1px #3f424d;
+  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+  /* The two lifts that carry their own drop shadow rather than the ramp's ring. */
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-toast: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* ── Shell chrome ───────────────────────────────────────────────── */
+  --shell-bg: #0f0f13;
+  --shell-sidebar-top: #141418;
+  --shell-panel: #101015;
+  --shell-embed: #0a0a0d;
+  --shell-overlay: #17171c;
+  --shell-toast: #1d1d24;
+  --shell-chip: #2a2a30;
+
+  --hairline: rgba(233, 233, 237, 0.08);
+  --hairline-strong: rgba(233, 233, 237, 0.1);
+  --edge: rgba(233, 233, 237, 0.14);
+  --edge-strong: rgba(233, 233, 237, 0.18);
+  --edge-loud: rgba(233, 233, 237, 0.35);
+  --hover: rgba(255, 255, 255, 0.05);
+  --hover-strong: rgba(255, 255, 255, 0.06);
+  --seg-on: rgba(255, 255, 255, 0.07);
+  --scrim: rgba(0, 0, 0, 0.55);
+  /* A tinted fill for a chip or a pressed control — heavier than a hover, still not a surface. */
+  --wash: rgba(255, 255, 255, 0.08);
+  /* The diagonal hatch behind an embed that is not live yet. */
+  --hatch: rgba(255, 255, 255, 0.02);
+
+  /* ── Status ─────────────────────────────────────────────────────── */
+  /* Modified/passing green and deleted/failing red are the only hues outside the accent;
+     both are desaturated to Nocturne's low-chroma rule. */
+  --status-add: #b5f0c0;
+  --status-del: #f0b5b5;
+  --status-pending: #febc2e;
+  --diff-add: #86d29a;
+  --diff-del: #e08a8a;
+
+  --dot-working: var(--color-accent);
+  --dot-attention: var(--color-accent-300);
+  /*
+   * Two shades of done. Once a result has been looked at it fades back to the design's calm grey;
+   * until then it has to be findable at a glance, because the completion chime says something
+   * finished without saying which session it was.
+   */
+  --dot-done: var(--color-neutral-800);
+  --dot-done-unseen: var(--status-add);
+  /* Work that stopped when it should not have — the deleted/failing hue, at the same low chroma. */
+  --dot-interrupted: var(--status-del);
+  /* A turn the API ended: the same failing hue, on its own symbol. */
+  --dot-error: var(--status-del);
+  /*
+   * Every state that wants the user, once the user has been. The symbol stays — the session still
+   * wants something — but the light goes out, because being lit is what "you have not seen this"
+   * means and nothing else.
+   */
+  --dot-seen: var(--color-neutral-600);
+}
+
+/*
+ * ── Light ─────────────────────────────────────────────────────────────────────
+ *
+ * Set by the renderer from the resolved theme; main decides what `system` resolves to.
+ *
+ * Only the primitives are restated. The roles above — --dot-working and its neighbours — are
+ * `var()` references, and a custom property substitutes at the point it is used rather than where
+ * it is written, so they pick these up without being repeated. The same goes for every rule in
+ * app.css: nothing there names a colour, so nothing there needs a light counterpart.
+ *
+ * The ramps are turned around rather than lightened. An index in a neutral or accent ramp means
+ * "how far from the ground", not "how bright" — --color-neutral-600 is the shade a timestamp is
+ * printed in either way — so the light values below were chosen to land on the same contrast
+ * against paper that Nocturne's land on against near-black, which is what keeps a screen of this
+ * app legible in either theme without app.css knowing which one it is in.
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --color-bg: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-text: #16181f;
+  /* Nocturne's #9184d9 falls to 2.6:1 on paper. Same hue, taken down until it reads. */
+  --color-accent: #5b4fc4;
+  --color-divider: color-mix(in srgb, #14161c 16%, transparent);
+
+  --color-neutral-100: #14161c;
+  --color-neutral-200: #20232c;
+  --color-neutral-300: #2f3340;
+  --color-neutral-400: #454956;
+  --color-neutral-500: #585c6a;
+  --color-neutral-600: #6f7382;
+  --color-neutral-700: #9a9eac;
+  --color-neutral-800: #c8cbd7;
+  --color-neutral-900: #e6e8f0;
+
+  --color-accent-100: #1b1735;
+  --color-accent-200: #272052;
+  --color-accent-300: #4437a3;
+  --color-accent-400: #5346bb;
+  --color-accent-500: #6759ce;
+  --color-accent-600: #8479dd;
+  --color-accent-700: #a9a1ec;
+  --color-accent-800: #ccc7f6;
+  --color-accent-900: #e8e5fc;
+
+  --shadow-sm: 0 0 0 1px #d8dbe5;
+  --shadow-md: 0 0 0 1px #c8cbd7, 0 6px 18px rgba(20, 22, 28, 0.1);
+  --shadow-lg: 0 0 0 1px #9a9eac, 0 16px 40px rgba(20, 22, 28, 0.16);
+  --shadow-modal: 0 24px 60px rgba(20, 22, 28, 0.2);
+  --shadow-toast: 0 12px 32px rgba(20, 22, 28, 0.16);
+
+  /*
+   * The embed stays the brightest thing on screen, which on this ground means it is the only white
+   * surface and the chrome is what steps away from it — the reverse of the dark shell, where the
+   * chrome is the lighter layer and the embed sinks below it.
+   */
+  --shell-bg: #f2f3f8;
+  --shell-sidebar-top: #e8eaf2;
+  --shell-panel: #eef0f6;
+  --shell-embed: #ffffff;
+  --shell-overlay: #ffffff;
+  --shell-toast: #ffffff;
+  --shell-chip: #e4e6ef;
+
+  /* Ink at low alpha, where the dark theme lays down light. */
+  --hairline: rgba(20, 22, 28, 0.09);
+  --hairline-strong: rgba(20, 22, 28, 0.12);
+  --edge: rgba(20, 22, 28, 0.14);
+  --edge-strong: rgba(20, 22, 28, 0.18);
+  --edge-loud: rgba(20, 22, 28, 0.32);
+  --hover: rgba(20, 22, 28, 0.05);
+  --hover-strong: rgba(20, 22, 28, 0.07);
+  --seg-on: rgba(20, 22, 28, 0.07);
+  --scrim: rgba(20, 22, 28, 0.32);
+  --wash: rgba(20, 22, 28, 0.07);
+  --hatch: rgba(20, 22, 28, 0.035);
+
+  /*
+   * The status hues are the one place the ramps cannot simply be reversed. Their dark values are
+   * pastels, which is what low chroma means against near-black; against paper the same pastel is a
+   * smudge, and two of these are read as words — the amber on a profile badge, the red on an error
+   * line — so they take the saturated end of the hue instead.
+   */
+  --status-add: #2f7d4a;
+  --status-del: #b3453f;
+  --status-pending: #96660a;
+  --diff-add: #2f7d4a;
+  --diff-del: #b3453f;
+}

@@ -1,0 +1,22 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g6a" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#20233a"></stop>
+      <stop offset="1" stop-color="#101120"></stop>
+    </linearGradient>
+    <filter id="soft6a" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9"></feGaussianBlur>
+    </filter>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#g6a)"></rect>
+  <rect x="17" y="17" width="478" height="478" rx="107" fill="none" stroke="#9184d9" stroke-opacity="0.22" stroke-width="2"></rect>
+  <circle cx="128" cy="352" r="16" fill="#8b8fa3"></circle>
+  <circle cx="212" cy="374" r="16" fill="#8b8fa3"></circle>
+  <circle cx="300" cy="374" r="16" fill="#8b8fa3"></circle>
+  <circle cx="384" cy="352" r="16" fill="#8b8fa3"></circle>
+  <g filter="url(#soft6a)" opacity="0.6">
+    <path d="M 116 216 Q 256 118 396 216" fill="none" stroke="#9184d9" stroke-width="24" stroke-linecap="round"></path>
+  </g>
+  <path d="M 116 216 Q 256 118 396 216" fill="none" stroke="#e9e9ed" stroke-width="24" stroke-linecap="round"></path>
+  <circle cx="396" cy="216" r="17" fill="#9184d9"></circle>
+</svg>

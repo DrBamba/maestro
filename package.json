@@ -1,0 +1,93 @@
+{
+  "name": "maestro",
+  "version": "0.1.0",
+  "description": "Run and manage Claude Code agent sessions in parallel \u2014 real terminal, real VS Code.",
+  "main": "./out/main/index.js",
+  "author": "Raz Kafri",
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://github.com/DrBamba/maestro",
+  "desktopName": "io.github.drbamba.maestro",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "rebuild": "electron-builder install-app-deps",
+    "postinstall": "install-electron && electron-builder install-app-deps",
+    "dist": "bash scripts/dist.sh",
+    "install-stable": "npm run dist -- mac && rm -rf /Applications/Maestro.app && cp -R dist/mac-arm64/Maestro.app /Applications/ && echo 'Maestro.app installed \u2014 open it from /Applications'",
+    "e2e": "npm run build && playwright test",
+    "e2e:only": "playwright test",
+    "e2e:linux": "linux/test.sh"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@phosphor-icons/web": "^2.1.2",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.4"
+  },
+  "build": {
+    "appId": "io.github.drbamba.maestro",
+    "productName": "Maestro",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "notarize": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icons",
+      "category": "Development",
+      "maintainer": "Raz Kafri <50530357+DrBamba@users.noreply.github.com>",
+      "synopsis": "Run and manage Claude Code agent sessions in parallel",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "git",
+        "libgtk-3-0 | libgtk-3-0t64",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0 | libatspi2.0-0t64",
+        "libasound2 | libasound2t64",
+        "libgbm1"
+      ]
+    }
+  }
+}

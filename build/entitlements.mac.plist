@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for a build signed ad-hoc rather than with a Developer ID.
+
+  The hardened runtime enforces library validation: a loaded library must be signed by the same
+  team as the app. An ad-hoc signature has no team, so node-pty — the native addon every terminal
+  in Maestro depends on — fails that check and the app dies on startup rather than at the moment a
+  terminal is opened, which makes it look like the build itself is broken.
+
+  This is the entitlement electron-builder names when it warns about exactly this combination. A
+  build signed with a real Developer ID and notarized would not need it, and should not have it.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Electron's renderer needs both to run its JIT under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+  </dict>
+</plist>

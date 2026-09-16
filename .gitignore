@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+.DS_Store
+*.log
+.vite/
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+
+# Screenshots from linux/test.sh — verification artefacts, not sources.
+linux/*.png
