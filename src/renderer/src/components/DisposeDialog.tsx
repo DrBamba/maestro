@@ -49,6 +49,7 @@ export default function DisposeDialog({
   const [wip, setWip] = useState<WipPlan>('leave')
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
+  const [deleteFolder, setDeleteFolder] = useState(false)
   const [allowForeign, setAllowForeign] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +81,8 @@ export default function DisposeDialog({
       wip: dirty ? wip : 'leave',
       deleteBranch: action === 'delete' && deleteBranch,
       hardDelete,
-      allowForeign
+      allowForeign,
+      deleteFolder: action === 'delete' && deleteFolder
     })
     setBusy(false)
     if (result.ok) onClose()
@@ -126,15 +128,19 @@ export default function DisposeDialog({
             <label>Afterwards</label>
             <div className="outcome">
               {/*
-                * Nothing about a local session was Maestro's to make, so nothing is Maestro's to
-                * remove. The folder is stated as kept rather than left out, because "delete" on a
-                * directory full of your own files is exactly the fear worth answering.
+                * The folder is stated either way, because "delete" on a directory full of your own
+                * files is exactly the fear worth answering.
                 */}
               {plan.isLocal ? (
                 <div className="outcome__row">
                   <span className="outcome__where">folder</span>
                   <span className="outcome__what">
-                    <b>kept</b> — {short(plan.worktreePath)} and everything in it
+                    {action === 'delete' && deleteFolder && plan.canDeleteFolder ? (
+                      <b style={{ color: 'var(--status-del)' }}>deleted</b>
+                    ) : (
+                      <b>kept</b>
+                    )}{' '}
+                    — {short(plan.worktreePath)} and everything in it
                   </span>
                 </div>
               ) : (
@@ -268,6 +274,22 @@ export default function DisposeDialog({
                 </span>
               </button>
             )}
+
+          {action === 'delete' && plan.isLocal && plan.canDeleteFolder && (
+            <button className="checkbox checkbox--warn" onClick={() => setDeleteFolder((v) => !v)}>
+              <span className={`checkbox__box${deleteFolder ? ' is-on' : ''}`}>
+                {deleteFolder && <i className="ph ph-check" />}
+              </span>
+              <span className="checkbox__label">
+                <i className="ph ph-warning" /> Also delete the folder and everything in it
+                {plan.worktreeOwned ? '' : '. Maestro did not create it'}. Nothing to recover.
+              </span>
+            </button>
+          )}
+
+          {action === 'delete' && plan.isLocal && plan.folderRefusal && (
+            <div className="modal__note">Can’t delete the folder: {plan.folderRefusal}.</div>
+          )}
 
           {action === 'delete' && plan.canDeleteBranch && (
             <button className="checkbox" onClick={() => setDeleteBranch((v) => !v)}>

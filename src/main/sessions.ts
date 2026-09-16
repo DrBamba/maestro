@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join, basename, resolve as resolvePath } from 'node:path'
-import { rm, access, cp, readdir, mkdir, stat } from 'node:fs/promises'
+import { rm, access, cp, readdir, mkdir, stat, realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { app } from 'electron'
 import type {
@@ -13,11 +13,15 @@ import type {
   ImportableWorktree,
   RelocatePlan,
   RelocateResult,
+  RemoveRepoOptions,
+  RemoveRepoPlan,
+  RepoFolderPlan,
   Repo,
   Session,
   StartMode
 } from '@shared/types'
 import { LOCAL_REPO_ID, isLocal } from '@shared/types'
+import { removalStep } from '@shared/removeRepo'
 import { store } from './store'
 import * as git from './git'
 import { agentStates, installHooks, stateFileFor, STATE_FILE_ENV } from './agentState'
@@ -441,6 +445,13 @@ export async function importWorktree(path: string): Promise<CreateResult> {
     repo = added
   }
 
+  // Adding a removed repo back brings its sessions with it, and this may be one of them. Compared
+  // resolved, because git reports real paths and a session's may run through a symlink.
+  for (const candidate of store.sessions.filter((s) => s.repoId === repo.id && !s.archived)) {
+    const real = await realpath(candidate.worktreePath).catch(() => candidate.worktreePath)
+    if (candidate.worktreePath === root || real === root) return { session: candidate }
+  }
+
   const branch = await git.currentBranch(root)
   await installHooks(root)
 
@@ -754,9 +765,8 @@ export async function createLocalSession(
     setupState: 'ok',
     /*
      * True only when Maestro made the directory — which is what tells the view it is brand new and
-     * has no conversation to offer picking up. It does not license removal here: unlike a worktree,
-     * a folder has no branch holding its contents, so disposing of a local session never deletes it
-     * (see archivePlan).
+     * has no conversation to offer picking up. Deleting the folder is a separate opt-in either
+     * way, because a folder has no branch holding its contents (see localFolderRefusal).
      */
     worktreeOwned: !typed,
     branchOwned: false,
@@ -972,18 +982,49 @@ export async function runSetupScript(
  * a flag meaning "imported", so the primary clone and a hand-made worktree fall out of the same
  * rules instead of needing their own branches.
  */
+/**
+ * Why a folder may not be deleted, or undefined when it may. Deleting a folder is final, so these
+ * refuse every case where it would take more than intended — a home directory, a folder holding
+ * Maestro's own roots or the directory of a session not going with it, or the checkout Maestro is
+ * running from.
+ */
+async function folderRefusal(
+  path: string,
+  goingWith: (session: Session) => boolean
+): Promise<string | undefined> {
+  const dir = resolvePath(path)
+  if (!(await pathExists(dir))) return 'it is already gone'
+  const guarded = [homedir(), resolvePath(worktreeRoot()), resolvePath(localRoot())]
+  if (dir === '/' || guarded.some((root) => isInside(root, dir))) {
+    return 'it holds your home folder or Maestro’s own folders'
+  }
+  if (isSelfHosted(dir)) return 'Maestro is running from it'
+  const other = store.allSessions.find(
+    (s) => !goingWith(s) && isInside(resolvePath(s.worktreePath), dir)
+  )
+  if (other) return `“${other.name}” also works in it`
+  return undefined
+}
+
+function isInside(child: string, parent: string): boolean {
+  return child === parent || child.startsWith(parent.endsWith('/') ? parent : `${parent}/`)
+}
+
+function localFolderRefusal(session: Session): Promise<string | undefined> {
+  return folderRefusal(session.worktreePath, (s) => s.id === session.id)
+}
+
 export async function archivePlan(sessionId: string): Promise<ArchivePlan | null> {
   const session = store.session(sessionId)
   if (!session) return null
 
   /*
-   * Every destructive step is unavailable for a local session rather than merely discouraged: there
-   * is no worktree to remove and no branch to delete. The folder stays even when Maestro made it —
-   * a worktree can be deleted because its branch still holds the commits, and a folder has no such
-   * backstop, so removing one from a confirmation dialog would be unrecoverable. Disposing of a
-   * local session only forgets it; the folder is the user's to bin.
+   * A local session has no worktree to remove and no branch to delete. Its folder stays unless
+   * deleting it is asked for explicitly: a worktree can be deleted because its branch still holds
+   * the commits, and a folder has no such backstop.
    */
   if (isLocal(session)) {
+    const folderRefusal = await localFolderRefusal(session)
     return {
       sessionId,
       worktreePath: session.worktreePath,
@@ -996,6 +1037,8 @@ export async function archivePlan(sessionId: string): Promise<ArchivePlan | null
       worktreeOwned: false,
       branchOwned: false,
       isLocal: true,
+      canDeleteFolder: folderRefusal === undefined,
+      folderRefusal,
       archived: session.archived,
       worktreeGone: false,
       dirtyCount: 0,
@@ -1036,7 +1079,9 @@ export async function archivePlan(sessionId: string): Promise<ArchivePlan | null
     store.repo(session.repoId)?.path ?? session.worktreePath,
     session.branch
   )
-  const stillCheckedOut = holders.filter((p) => p !== session.worktreePath)
+  // Compared resolved: git lists real paths, and the session's may run through a symlink.
+  const own = await realpath(session.worktreePath).catch(() => session.worktreePath)
+  const stillCheckedOut = holders.filter((p) => p !== session.worktreePath && p !== own)
   const canDeleteBranch = (canRemoveWorktree || worktreeGone) && stillCheckedOut.length === 0
   if (stillCheckedOut.length > 0) {
     notes.push(`${session.branch} is also checked out at ${stillCheckedOut[0]}, so it cannot be deleted.`)
@@ -1054,6 +1099,7 @@ export async function archivePlan(sessionId: string): Promise<ArchivePlan | null
     worktreeOwned: session.worktreeOwned,
     branchOwned: session.branchOwned,
     isLocal: false,
+    canDeleteFolder: false,
     archived: session.archived,
     worktreeGone,
     dirtyCount: worktreeGone ? 0 : await git.dirtyCount(session.worktreePath),
@@ -1124,6 +1170,10 @@ export async function disposeSession(
     }
   }
 
+  if (options.deleteFolder && plan.isLocal && !plan.canDeleteFolder) {
+    return { ok: false, error: `Can’t delete the folder: ${plan.folderRefusal ?? 'not allowed'}.`, commands }
+  }
+
   const settled = await settleWip(session, options.wip, commands)
   if (!settled.ok) return { ok: false, error: settled.error, commands }
 
@@ -1139,6 +1189,16 @@ export async function disposeSession(
   ptys.killSession(sessionId)
   agentStates.forget(sessionId)
   titleWatcher.cancel(sessionId)
+
+  const deleteFolder = options.action === 'delete' && options.deleteFolder === true && plan.isLocal
+  if (deleteFolder) {
+    try {
+      commands.push(`rm -rf ${session.worktreePath}`)
+      await rm(session.worktreePath, { recursive: true, force: true })
+    } catch (err) {
+      return { ok: false, error: `Could not delete ${session.worktreePath}: ${String(err)}`, commands }
+    }
+  }
 
   if (removeWorktree && repo) {
     try {
@@ -1195,6 +1255,129 @@ export async function disposeSession(
     })
   } else {
     store.removeSession(sessionId)
+  }
+  return { ok: true, commands }
+}
+
+/** What removing a repo could do to each of its sessions and to its folder, for the dialog. */
+export async function removeRepoPlan(repoId: string): Promise<RemoveRepoPlan | null> {
+  const repo = store.repo(repoId)
+  if (!repo) return null
+  const sessions: ArchivePlan[] = []
+  for (const session of store.sessions.filter((s) => s.repoId === repoId)) {
+    const plan = await archivePlan(session.id)
+    if (plan) sessions.push(plan)
+  }
+  return { sessions, folder: await repoFolderPlan(repo) }
+}
+
+async function repoFolderPlan(repo: Repo): Promise<RepoFolderPlan> {
+  let refusal = await folderRefusal(repo.path, (s) => s.repoId === repo.id)
+
+  /*
+   * A worktree no session tracks would be left pointing at a repo that no longer exists, and it is
+   * work Maestro has never shown. It is named rather than swept up.
+   */
+  if (!refusal) {
+    const running = store.allSessions.find(
+      (s) => s.repoId === repo.id && isSelfHosted(resolvePath(s.worktreePath))
+    )
+    if (running) refusal = `Maestro is running from “${running.name}”`
+  }
+
+  if (!refusal) {
+    const tracked = new Set<string>()
+    for (const s of store.allSessions.filter((x) => x.repoId === repo.id)) {
+      tracked.add(s.worktreePath)
+      tracked.add(await realpath(s.worktreePath).catch(() => s.worktreePath))
+    }
+    let stray: { path: string } | undefined
+    for (const w of await git.listWorktrees(repo.path)) {
+      // A directory already gone is only stale metadata, and goes with the clone.
+      if (!w.isMain && !tracked.has(w.path) && (await pathExists(w.path))) {
+        stray = w
+        break
+      }
+    }
+    if (stray) refusal = `${stray.path} is a worktree Maestro doesn’t track`
+  }
+
+  const primaryTracked = store.sessions.some((s) => s.repoId === repo.id && s.isPrimaryClone)
+  return {
+    path: repo.path,
+    canDelete: refusal === undefined,
+    refusal,
+    unpushedCommits: await git.unpushedCommitCount(repo.path),
+    stashes: await git.stashCount(repo.path),
+    dirtyFiles: primaryTracked ? 0 : await git.dirtyCount(repo.path)
+  }
+}
+
+/**
+ * Takes a repo out of Maestro. The repo is hidden, never dropped: its sessions stop and go with it,
+ * and adding the same path again brings them back.
+ *
+ * Deleting worktrees and branches is opt-in, and runs through {@link disposeSession} one session
+ * at a time, so every guard a single delete has — uncommitted work, foreign worktrees, branches
+ * still checked out — holds here too. A session that loses only its worktree is archived and stays
+ * restorable; one that loses its branch as well has nothing left to restore, so it is deleted.
+ * The repo stays visible if any of it fails, so what is left can be retried.
+ */
+export async function removeRepo(repoId: string, options: RemoveRepoOptions): Promise<ArchiveResult> {
+  const commands: string[] = []
+  const plan = await removeRepoPlan(repoId)
+  const repo = store.repo(repoId)
+  if (!plan || !repo) return { ok: false, error: 'Repo not found.', commands }
+
+  const deleteFolder = options.deleteFolder
+  if (deleteFolder && !plan.folder.canDelete) {
+    return {
+      ok: false,
+      error: `Can’t delete the repo folder: ${plan.folder.refusal ?? 'not allowed'}.`,
+      commands
+    }
+  }
+
+  if (options.removeWorktrees || options.deleteBranches || deleteFolder) {
+    for (const sessionPlan of plan.sessions) {
+      const { deletesBranch, untouched } = removalStep(sessionPlan, options)
+      if (untouched) continue
+
+      const result = await disposeSession(sessionPlan.sessionId, {
+        // With the clone going there is nothing to archive back to.
+        action: deletesBranch || deleteFolder ? 'delete' : 'archive',
+        // A commit or stash would live in the clone about to be deleted.
+        wip: sessionPlan.dirtyCount === 0 ? 'leave' : deleteFolder ? 'discard' : options.wip,
+        deleteBranch: deletesBranch,
+        // Only for the worktree: deletesBranch already excludes every branch Maestro did not create.
+        allowForeign: options.allowForeign || deleteFolder,
+        hardDelete: deleteFolder
+      })
+      commands.push(...result.commands)
+      if (!result.ok) {
+        const name = store.session(sessionPlan.sessionId)?.name ?? sessionPlan.branch
+        return { ok: false, error: `${name}: ${result.error ?? 'failed.'}`, commands }
+      }
+    }
+  }
+
+  for (const session of store.sessions.filter((s) => s.repoId === repoId)) {
+    ptys.killSession(session.id)
+    agentStates.forget(session.id)
+    titleWatcher.cancel(session.id)
+  }
+
+  if (deleteFolder) {
+    try {
+      commands.push(`rm -rf ${repo.path}`)
+      await rm(repo.path, { recursive: true, force: true })
+    } catch (err) {
+      return { ok: false, error: `Could not delete ${repo.path}: ${String(err)}`, commands }
+    }
+    // Nothing is left to come back, so the record goes rather than hiding.
+    store.dropRepo(repoId)
+  } else {
+    store.hideRepo(repoId)
   }
   return { ok: true, commands }
 }

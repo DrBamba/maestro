@@ -21,6 +21,8 @@ import type {
   PrResult,
   PrStatus,
   Preferences,
+  RemoveRepoOptions,
+  RemoveRepoPlan,
   Repo,
   Session,
   StartMode
@@ -100,7 +102,12 @@ const api = {
     add: (): Promise<{ repo?: Repo; error?: string }> => ipcRenderer.invoke('repo:add'),
     update: (id: string, patch: Partial<Repo>): Promise<Repo | undefined> =>
       ipcRenderer.invoke('repo:update', id, patch),
-    remove: (id: string): Promise<boolean> => ipcRenderer.invoke('repo:remove', id),
+    /** What removing would do to each of the repo's sessions. */
+    removePlan: (id: string): Promise<RemoveRepoPlan | null> =>
+      ipcRenderer.invoke('repo:removePlan', id),
+    /** Hides the repo and its sessions; deleting worktrees and branches is opt-in. */
+    remove: (id: string, options: RemoveRepoOptions): Promise<ArchiveResult> =>
+      ipcRenderer.invoke('repo:remove', id, options),
     /** Refreshes remote-tracking refs; false when there was no remote to reach. */
     fetch: (id: string): Promise<boolean> => ipcRenderer.invoke('repo:fetch', id),
     /** Whether a worktree cut from `ref` would carry `.maestro/setup.sh`. */

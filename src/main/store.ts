@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync, realpathSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Preferences, Repo, Session } from '@shared/types'
@@ -146,12 +146,27 @@ class Store {
     }
   }
 
+  /** The repos in the sidebar — a removed repo's record is kept, but nothing sees it. */
   get repos(): Repo[] {
-    return this.data.repos
+    return this.data.repos.filter((r) => !r.hidden)
   }
 
-  get sessions(): Session[] {
+  /** Whether any repo was ever added, removed ones included. */
+  get hasRepoRecords(): boolean {
+    return this.data.repos.length > 0
+  }
+
+  /** Every session record, removed repos' included — for checks about what is on disk. */
+  get allSessions(): Session[] {
     return this.data.sessions
+  }
+
+  /** Sessions of removed repos are out of sight along with the repo. */
+  get sessions(): Session[] {
+    const hidden = new Set(this.data.repos.filter((r) => r.hidden).map((r) => r.id))
+    return hidden.size === 0
+      ? this.data.sessions
+      : this.data.sessions.filter((s) => !hidden.has(s.repoId))
   }
 
   get activeSessionId(): string | null {
@@ -183,8 +198,28 @@ class Store {
   }
 
   addRepo(input: Omit<Repo, 'id' | 'collapsed' | 'runScripts'> & Partial<Repo>): Repo {
-    const existing = this.data.repos.find((r) => r.path === input.path)
-    if (existing) return existing
+    // By real path too: git reports resolved paths, so a repo recorded through a symlink would
+    // otherwise come back as a second record rather than as the removed one.
+    const real = (p: string): string => {
+      try {
+        return realpathSync(p)
+      } catch {
+        return p
+      }
+    }
+    const target = real(input.path)
+    const existing = this.data.repos.find((r) => r.path === input.path || real(r.path) === target)
+    if (existing) {
+      if (existing.hidden) {
+        delete existing.hidden
+        // Their Claude was stopped when the repo was removed, so each picks its conversation back up.
+        for (const session of this.data.sessions) {
+          if (session.repoId === existing.id && !session.archived) session.restoredAt = Date.now()
+        }
+        this.flush()
+      }
+      return existing
+    }
     const repo: Repo = {
       id: randomUUID(),
       name: input.name,
@@ -206,9 +241,22 @@ class Store {
     return repo
   }
 
-  removeRepo(id: string): void {
+  /** The repo and every session record of it, for a repo whose folder is gone. */
+  dropRepo(id: string): void {
     this.data.repos = this.data.repos.filter((r) => r.id !== id)
     this.data.sessions = this.data.sessions.filter((s) => s.repoId !== id)
+    if (!this.data.sessions.some((s) => s.id === this.data.activeSessionId)) {
+      this.data.activeSessionId = null
+    }
+    this.flush()
+  }
+
+  hideRepo(id: string): void {
+    const repo = this.repo(id)
+    if (!repo) return
+    repo.hidden = true
+    const active = this.data.sessions.find((s) => s.id === this.data.activeSessionId)
+    if (active?.repoId === id) this.data.activeSessionId = null
     this.flush()
   }
 

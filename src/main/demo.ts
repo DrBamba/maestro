@@ -99,7 +99,7 @@ async function createRepo(root: string, spec: DemoSpec): Promise<string | null> 
 /** Idempotent: seeds only a non-stable profile that has no repos yet. */
 export async function seedDemoRepos(): Promise<void> {
   if (profile() === 'stable') return
-  if (store.repos.length > 0) return
+  if (store.hasRepoRecords) return
 
   const root = join(app.getPath('userData'), 'demo-repos')
   await mkdir(root, { recursive: true })

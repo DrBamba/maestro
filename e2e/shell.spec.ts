@@ -715,23 +715,77 @@ test('a local session can work in a folder that already exists', async ({ window
   await expect.poll(() => activeClass(window), { timeout: 15_000 }).toContain('xterm-helper-textarea')
 })
 
-test('deleting a local session promises to leave the folder alone', async ({ window }) => {
+test('deleting a local session keeps the folder unless asked to delete it', async ({ window }) => {
   await window.click('[aria-label="New local session"]')
   await window.fill('#local-prompt', 'keep my files')
   await window.click('.modal__actions .btn--primary')
 
   const row = window.locator('.repo-group--local .session-row').first()
   await expect(row).toBeVisible()
+  const folder = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.sessions.find((x) => x.repoId === 'local')!.worktreePath)
+  )
   await row.hover()
   await row.locator('[aria-label="Delete keep my files"]').click()
 
   const dialog = window.locator('.modal')
-  await expect(dialog).toBeVisible()
-  await dialog.locator('.seg__opt:has-text("Delete")').click()
-  // The folder is the user's own, so no wording about removing it — and no rm -rf escape hatch.
-  await expect(dialog.locator('.outcome')).toContainText('kept')
-  await expect(dialog.locator('.outcome')).not.toContainText('deleted —')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  // Archiving never offers it.
+  await dialog.locator('.seg__opt:has-text("Archive")').click()
   await expect(dialog.locator('.checkbox')).toHaveCount(0)
+
+  await dialog.locator('.seg__opt:has-text("Delete")').click()
+  await expect(dialog.locator('.outcome')).toContainText('kept')
+  const box = dialog.locator('.checkbox:has-text("Also delete the folder")')
+  await expect(box).toHaveCount(1)
+  await box.click()
+  await expect(dialog.locator('.outcome')).toContainText('deleted')
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(window.locator('.repo-group--local .session-row')).toHaveCount(0)
+  expect(existsSync(folder)).toBe(false)
+})
+
+test('a local folder holding more than the session cannot be deleted', async ({
+  window,
+  profileDir
+}) => {
+  // The profile holds Maestro's own worktree root, so deleting it would take far more than this.
+  await window.click('[aria-label="New local session"]')
+  await window.click('.seg__opt:has-text("One I already have")')
+  await window.fill('#local-path', profileDir)
+  await window.fill('#local-name', 'too big to delete')
+  await window.click('.modal__actions .btn--primary')
+
+  const row = window.locator('.repo-group--local .session-row').first()
+  await expect(row).toBeVisible({ timeout: 30_000 })
+  await row.hover()
+  await row.locator('[aria-label="Delete too big to delete"]').click()
+
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await dialog.locator('.seg__opt:has-text("Delete")').click()
+  await expect(dialog.locator('.checkbox')).toHaveCount(0)
+  await expect(dialog).toContainText('Can’t delete the folder')
+
+  // Main refuses too, whatever the renderer sends.
+  const id = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.sessions.find((x) => x.repoId === 'local')!.id)
+  )
+  const result = await window.evaluate(
+    (sessionId) =>
+      window.maestro.sessions.dispose(sessionId, {
+        action: 'delete',
+        wip: 'leave',
+        deleteBranch: false,
+        allowForeign: false,
+        hardDelete: false,
+        deleteFolder: true
+      }),
+    id
+  )
+  expect(result.ok).toBe(false)
+  expect(existsSync(profileDir)).toBe(true)
 })
 
 test('a restored session picks up its conversation, not a new one', async ({
@@ -827,4 +881,161 @@ test('archiving is offered per session and states what it will do', async ({ win
   // Maestro made this worktree and branch, so neither needs the foreign opt-in.
   await expect(dialog.locator('.outcome')).toContainText('deleted')
   await expect(dialog.locator('.checkbox--warn')).toHaveCount(0)
+})
+
+/** Opens the Remove dialog for a repo and waits for its plan. */
+async function openRemoveRepo(window: Page, repo = 'demo-api'): Promise<void> {
+  await window.hover(`.repo-group:has([aria-label="New session in ${repo}"]) .repo-head`)
+  await window.click(`[aria-label="Remove ${repo}"]`)
+  await expect(window.locator('.modal__title')).toHaveText(`Remove “${repo}”?`)
+  await expect(window.locator('.modal .launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+}
+
+const repoNames = (window: Page) =>
+  window.locator('.repo-group:not(.repo-group--local) .repo-head__name')
+
+test('removing a repo hides it and its sessions, and adding it back returns them', async ({
+  window,
+  relaunch,
+  running
+}) => {
+  await createSession(window, 'work in a removed repo')
+  const session = await window.evaluate(() => window.maestro.snapshot().then((s) => s.sessions[0]))
+  const repoPath = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.repos.find((r) => r.name === 'demo-api')!.path)
+  )
+
+  await openRemoveRepo(window)
+  // Nothing is deleted unless asked.
+  await expect(window.locator('.modal .outcome')).not.toContainText('deleted')
+  await window.click('.modal__actions .btn--primary')
+
+  await expect(repoNames(window)).toHaveText(['demo-web'])
+  await expect(window.locator('.session-row')).toHaveCount(0)
+  await expect(window.locator('.board__frame')).toHaveCount(0)
+  expect(existsSync(session.worktreePath)).toBe(true)
+
+  // Still hidden after a restart.
+  const next = await relaunch()
+  await expect(repoNames(next)).toHaveText(['demo-web'])
+  await expect(next.locator('.session-row')).toHaveCount(0)
+
+  // Add repo, with the native folder picker answered in main.
+  await running.app!.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
+  }, repoPath)
+  await next.click('.sidebar__foot .btn--block')
+
+  // The same session, not a new one.
+  await expect(repoNames(next)).toHaveText(['demo-web', 'demo-api'])
+  await expect(next.locator('.session-row__name')).toHaveText(['work in a removed repo'])
+  const ids = await next.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.sessions.map((x) => x.id))
+  )
+  expect(ids).toEqual([session.id])
+})
+
+test('removing a repo can delete its worktrees and branches, settling uncommitted work first', async ({
+  window
+}) => {
+  await createSession(window, 'throwaway work')
+  const session = await window.evaluate(() => window.maestro.snapshot().then((s) => s.sessions[0]))
+  const repoPath = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.repos.find((r) => r.name === 'demo-api')!.path)
+  )
+  await writeFile(join(session.worktreePath, 'scratch.txt'), 'wip\n', 'utf8')
+
+  await openRemoveRepo(window)
+  const dialog = window.locator('.modal')
+  // The branch box only appears once the worktrees are going.
+  await expect(dialog.locator('.checkbox:has-text("Also delete their")')).toHaveCount(0)
+  await dialog.locator('.checkbox:has-text("Also delete the 1 worktree")').click()
+  await dialog.locator('.checkbox:has-text("Also delete their 1 branch")').click()
+  await expect(dialog.locator('.outcome')).toContainText('1 deleted')
+
+  // The uncommitted file must be dealt with before anything goes.
+  const confirm = dialog.locator('.modal__actions .btn--primary')
+  await expect(confirm).toBeDisabled()
+  await dialog.locator('.seg__opt:has-text("Discard them")').click()
+  await confirm.click()
+
+  await expect(repoNames(window)).toHaveText(['demo-web'])
+  expect(existsSync(session.worktreePath)).toBe(false)
+  const { stdout } = await exec('git', ['-C', repoPath, 'branch', '--list', session.branch])
+  expect(stdout.trim()).toBe('')
+
+  // Nothing left to restore, so the record went with the branch.
+  const result = await window.evaluate((path) => window.maestro.sessions.import(path), repoPath)
+  expect(result.session).toBeDefined()
+  await expect(window.locator('.session-row__name', { hasText: 'throwaway work' })).toHaveCount(0)
+})
+
+test('removing a repo can delete the repo folder, saying what is lost first', async ({
+  window,
+  profileDir
+}) => {
+  await createSession(window, 'goes with the repo')
+  const session = await window.evaluate(() => window.maestro.snapshot().then((s) => s.sessions[0]))
+  const repoPath = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.repos.find((r) => r.name === 'demo-api')!.path)
+  )
+  await writeFile(join(session.worktreePath, 'scratch.txt'), 'wip\n', 'utf8')
+
+  await openRemoveRepo(window)
+  const dialog = window.locator('.modal')
+  await dialog.locator('.checkbox:has-text("Delete the repo folder too")').click()
+  await expect(dialog.locator('.modal__title')).toHaveText('Delete “demo-api”?')
+  // No remote, so every commit is unpushed; and the uncommitted file is named as lost, not asked about.
+  await expect(dialog.locator('.outcome')).toContainText('not on any remote')
+  await expect(dialog.locator('.outcome')).toContainText('uncommitted file')
+  await expect(dialog.locator('.seg__opt:has-text("Discard them")')).toHaveCount(0)
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(repoNames(window)).toHaveText(['demo-web'])
+  expect(existsSync(repoPath)).toBe(false)
+  expect(existsSync(session.worktreePath)).toBe(false)
+
+  // Nothing left to come back, so the record is gone rather than hidden.
+  await expect
+    .poll(async () => {
+      const store = JSON.parse(await readFile(join(profileDir, 'maestro.json'), 'utf8')) as {
+        repos: { path: string }[]
+        sessions: { id: string }[]
+      }
+      return {
+        repo: store.repos.some((r) => r.path === repoPath),
+        session: store.sessions.some((x) => x.id === session.id)
+      }
+    })
+    .toEqual({ repo: false, session: false })
+})
+
+test('the repo folder is not offered for deletion while a worktree Maestro does not track uses it', async ({
+  window,
+  profileDir
+}) => {
+  const repoPath = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.repos.find((r) => r.name === 'demo-api')!.path)
+  )
+  const stray = join(profileDir, 'stray-worktree')
+  await exec('git', ['-C', repoPath, 'worktree', 'add', '-b', 'stray', stray])
+
+  await openRemoveRepo(window)
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.checkbox:has-text("Delete the repo folder too")')).toHaveCount(0)
+  await expect(dialog).toContainText('Can’t delete the repo folder')
+
+  // Main refuses too, whatever the renderer sends.
+  const result = await window.evaluate(async () => {
+    const id = (await window.maestro.snapshot()).repos.find((r) => r.name === 'demo-api')!.id
+    return window.maestro.repos.remove(id, {
+      removeWorktrees: false,
+      deleteBranches: false,
+      wip: 'leave',
+      allowForeign: false,
+      deleteFolder: true
+    })
+  })
+  expect(result.ok).toBe(false)
+  expect(existsSync(repoPath)).toBe(true)
 })

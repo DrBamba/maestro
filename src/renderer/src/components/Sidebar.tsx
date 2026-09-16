@@ -314,6 +314,7 @@ interface SidebarProps {
   onNewLocal: () => void
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
+  onRemoveRepo: (repoId: string) => void
   onRestore: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
@@ -335,6 +336,7 @@ export default function Sidebar({
   onNewLocal,
   onToggleRepo,
   onAddRepo,
+  onRemoveRepo,
   onRestore,
   onArchive,
   onDelete,
@@ -444,6 +446,14 @@ export default function Sidebar({
                 <span className="repo-head__name" title={repo.path}>
                   {repo.name}
                 </span>
+                <button
+                  className="icon-btn-bare repo-head__remove"
+                  onClick={() => onRemoveRepo(repo.id)}
+                  aria-label={`Remove ${repo.name}`}
+                  title="Remove repo from Maestro…"
+                >
+                  <i className="ph ph-trash" />
+                </button>
                 <button
                   className="icon-btn-bare"
                   onClick={() => onNewSession(repo.id)}

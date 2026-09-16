@@ -122,6 +122,17 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
   return entries
 }
 
+/** Commits on local branches that no remote has — what deleting the clone would lose for good. */
+export async function unpushedCommitCount(repoPath: string): Promise<number> {
+  const out = await gitOrNull(repoPath, ['rev-list', '--count', '--branches', '--not', '--remotes'])
+  return out ? Number(out.trim()) || 0 : 0
+}
+
+export async function stashCount(repoPath: string): Promise<number> {
+  const out = await gitOrNull(repoPath, ['stash', 'list'])
+  return out ? out.split('\n').filter(Boolean).length : 0
+}
+
 export async function dirtyCount(worktreePath: string): Promise<number> {
   const out = await gitOrNull(worktreePath, ['status', '--porcelain'])
   return out ? out.split('\n').filter(Boolean).length : 0

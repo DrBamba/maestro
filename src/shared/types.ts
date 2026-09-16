@@ -52,6 +52,11 @@ export interface Repo {
   defaultBranch: string
   runScripts: RunScript[]
   collapsed: boolean
+  /**
+   * Removed from Maestro. The record and its sessions are kept out of sight rather than dropped, so
+   * adding the same path again brings them back as they were.
+   */
+  hidden?: boolean
 }
 
 /**
@@ -185,6 +190,38 @@ export type DisposeAction = 'archive' | 'delete'
 /** What to do with uncommitted work before the worktree is removed. */
 export type WipPlan = 'commit' | 'stash' | 'discard' | 'leave'
 
+/** What deleting a repo's own folder would take with it. */
+export interface RepoFolderPlan {
+  path: string
+  canDelete: boolean
+  /** Why it cannot be deleted, when it cannot. */
+  refusal?: string
+  /** Commits on local branches that no remote has. */
+  unpushedCommits: number
+  stashes: number
+  /** Uncommitted files in the clone itself; worktrees count their own in their session plans. */
+  dirtyFiles: number
+}
+
+export interface RemoveRepoPlan {
+  sessions: ArchivePlan[]
+  folder: RepoFolderPlan
+}
+
+/**
+ * What else goes when a repo is removed. Without `deleteFolder` the repo is only hidden; with it,
+ * the clone, every session's worktree and every session record go, and nothing can come back.
+ */
+export interface RemoveRepoOptions {
+  /** Worktrees Maestro created, plus foreign ones when `allowForeign` is set. */
+  removeWorktrees: boolean
+  /** Branches Maestro created, whose worktree is removed or already gone. Never a foreign branch. */
+  deleteBranches: boolean
+  wip: WipPlan
+  allowForeign: boolean
+  deleteFolder: boolean
+}
+
 export interface DisposeOptions {
   action: DisposeAction
   wip: WipPlan
@@ -200,6 +237,8 @@ export interface DisposeOptions {
    * this used to run automatically on any failure, which turned a refusal into destruction.
    */
   hardDelete: boolean
+  /** Deletes a local session's folder along with it. Delete only, never archive. */
+  deleteFolder?: boolean
 }
 
 /**
@@ -219,8 +258,15 @@ export interface ArchivePlan {
   isPrimaryClone: boolean
   worktreeOwned: boolean
   branchOwned: boolean
-  /** Nothing on disk is Maestro's to remove — the folder was here before the session. */
+  /** A local session: no worktree or branch, just a folder. */
   isLocal: boolean
+  /**
+   * A local session's folder may be deleted on request. False for anything that would take more
+   * than this session's own files with it — see {@link folderRefusal}.
+   */
+  canDeleteFolder: boolean
+  /** Why the folder cannot be deleted, when it cannot. */
+  folderRefusal?: string
   /**
    * The session is already archived, so archiving again is not on offer — only delete is, and it
    * acts on what archiving left behind.

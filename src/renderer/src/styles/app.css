@@ -246,6 +246,16 @@ select {
   color: var(--color-neutral-300);
 }
 
+/* Removing a repo is rare, so its button waits for hover rather than sitting beside +. */
+.repo-head__remove {
+  display: none;
+}
+
+.repo-head:hover .repo-head__remove,
+.repo-head:focus-within .repo-head__remove {
+  display: inline-flex;
+}
+
 .session-row {
   display: flex;
   align-items: center;

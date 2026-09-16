@@ -17,6 +17,7 @@ import type {
   PrResult,
   PrStatus,
   Preferences,
+  RemoveRepoOptions,
   Repo,
   Session,
   StartMode
@@ -47,6 +48,8 @@ import {
   launchClaude,
   relocatePlan,
   relocateToWorktree,
+  removeRepo,
+  removeRepoPlan,
   runSetupScript,
   syncRelocatedHistory,
   localRoot,
@@ -343,7 +346,10 @@ export function registerIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return {}
     const added = await addRepo(result.filePaths[0])
-    return 'error' in added ? { error: added.error } : { repo: added }
+    if ('error' in added) return { error: added.error }
+    // A removed repo comes back with its sessions.
+    pushSessions()
+    return { repo: added }
   })
 
   ipcMain.handle('repo:update', (_e, id: string, patch: Partial<Repo>) => store.updateRepo(id, patch))
@@ -358,9 +364,13 @@ export function registerIpc(): void {
     return git.pathExistsAtRef(repo.path, ref || repo.defaultBranch, SETUP_SCRIPT_REL)
   })
 
-  ipcMain.handle('repo:remove', (_e, id: string) => {
-    store.removeRepo(id)
-    return true
+  ipcMain.handle('repo:removePlan', (_e, id: string) => removeRepoPlan(id))
+
+  ipcMain.handle('repo:remove', async (_e, id: string, options: RemoveRepoOptions) => {
+    const result = await removeRepo(id, options)
+    pushSessions()
+    refreshBadge()
+    return result
   })
 
   // ── sessions ────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import type {
   AgentStatus,
   DisposeAction,
   DisposeOptions,
+  RemoveRepoOptions,
   GitStatus,
   LaunchSettings,
   MergeMode,
@@ -22,6 +23,7 @@ import PrDialog from './components/PrDialog'
 import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
 import RenameDialog from './components/RenameDialog'
+import RemoveRepoDialog from './components/RemoveRepoDialog'
 import SettingsDialog from './components/SettingsDialog'
 import Tooltip from './components/Tooltip'
 import type { EditorHandle } from './components/EditorPane'
@@ -39,6 +41,7 @@ type Overlay =
   | 'pr'
   | 'dispose'
   | 'rename'
+  | 'removeRepo'
   | 'settings'
   | null
 
@@ -65,6 +68,7 @@ export default function App(): React.JSX.Element {
   /** Which session the dispose dialog is about — not always the active one. */
   const [disposeTarget, setDisposeTarget] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
+  const [removeRepoTarget, setRemoveRepoTarget] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const [openedIds, setOpenedIds] = useState<string[]>([])
@@ -181,6 +185,11 @@ export default function App(): React.JSX.Element {
     () => sessions.find((s) => s.id === disposeTarget) ?? null,
     [sessions, disposeTarget]
   )
+  const removeRepoSubject = useMemo(
+    () => repos.find((r) => r.id === removeRepoTarget) ?? null,
+    [repos, removeRepoTarget]
+  )
+
   const renameSubject = useMemo(
     () => sessions.find((s) => s.id === renameTarget) ?? null,
     [sessions, renameTarget]
@@ -201,6 +210,28 @@ export default function App(): React.JSX.Element {
       notice(`Added ${result.repo.name}`)
     }
   }, [notice])
+
+  const openRemoveRepo = useCallback((repoId: string) => {
+    setRemoveRepoTarget(repoId)
+    setOverlay('removeRepo')
+  }, [])
+
+  const removeRepo = useCallback(
+    async (repoId: string, options: RemoveRepoOptions) => {
+      const repo = repos.find((r) => r.id === repoId)
+      const touched = new Set(sessions.filter((s) => s.repoId === repoId).map((s) => s.id))
+      const result = await window.maestro.repos.remove(repoId, options)
+      // Even a failure part-way may have archived or deleted some of them, so their views close.
+      setOpenedIds((ids) => ids.filter((id) => !touched.has(id)))
+      setActiveId((current) => (current && touched.has(current) ? null : current))
+      if (result.ok) {
+        setRepos((prev) => prev.filter((r) => r.id !== repoId))
+        if (repo) notice(`Removed ${repo.name}`)
+      }
+      return result
+    },
+    [repos, sessions, notice]
+  )
 
   const createSession = useCallback(
     async (
@@ -451,6 +482,13 @@ export default function App(): React.JSX.Element {
           void addRepo()
         }
       },
+      ...repos.map((repo) => ({
+        id: `remove-repo-${repo.id}`,
+        icon: 'ph ph-trash',
+        label: `Remove repo: ${repo.name}`,
+        hint: 'comes back when added again',
+        run: () => openRemoveRepo(repo.id)
+      })),
       {
         id: 'settings',
         icon: 'ph ph-sliders-horizontal',
@@ -606,8 +644,10 @@ export default function App(): React.JSX.Element {
     activeSession,
     activeRepo,
     addRepo,
+    repos,
     notice,
     openDispose,
+    openRemoveRepo,
     openRename,
     restoreSession,
     selectSession
@@ -636,6 +676,7 @@ export default function App(): React.JSX.Element {
         onNewLocal={() => setOverlay('local')}
         onToggleRepo={toggleRepo}
         onAddRepo={() => void addRepo()}
+        onRemoveRepo={openRemoveRepo}
         onRestore={(id) => void restoreSession(id)}
         onArchive={(id) => openDispose(id, 'archive')}
         onDelete={(id) => openDispose(id, 'delete')}
@@ -739,6 +780,26 @@ export default function App(): React.JSX.Element {
           initialAction={disposeAction}
           onClose={() => setOverlay(null)}
           onDispose={runDispose}
+        />
+      )}
+
+      {overlay === 'removeRepo' && removeRepoSubject && (
+        <RemoveRepoDialog
+          repoId={removeRepoSubject.id}
+          repoName={removeRepoSubject.name}
+          repoPath={
+            home && removeRepoSubject.path.startsWith(home)
+              ? `~${removeRepoSubject.path.slice(home.length)}`
+              : removeRepoSubject.path
+          }
+          busyCount={
+            sessions.filter((s) => {
+              const state = agentStates[s.id]?.state
+              return s.repoId === removeRepoSubject.id && (state === 'working' || state === 'delegating')
+            }).length
+          }
+          onClose={() => setOverlay(null)}
+          onRemove={(options) => removeRepo(removeRepoSubject.id, options)}
         />
       )}
 
