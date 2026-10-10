@@ -416,6 +416,11 @@ export default function App(): React.JSX.Element {
     if (repo) void window.maestro.repos.update(repoId, { collapsed: !repo.collapsed })
   }, [repos])
 
+  const reorderRepos = useCallback((ids: string[]) => {
+    setRepos((prev) => ids.flatMap((id) => prev.filter((r) => r.id === id)))
+    void window.maestro.repos.reorder(ids)
+  }, [])
+
   const runMerge = useCallback(
     async (mode: MergeMode, archiveAfter: boolean) => {
       if (!activeId) {
@@ -775,6 +780,7 @@ export default function App(): React.JSX.Element {
         localCollapsed={localCollapsed}
         onToggleLocal={() => setLocalCollapsed((v) => !v)}
         onToggleRepo={toggleRepo}
+        onReorderRepos={reorderRepos}
         onAddRepo={() => void addRepo()}
         onRemoveRepo={openRemoveRepo}
         onDeleteLocalFolder={openDeleteFolder}

@@ -418,6 +418,8 @@ interface SidebarProps {
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
   onRemoveRepo: (repoId: string) => void
+  /** Every listed repo's id, in the order they were dragged into. */
+  onReorderRepos: (ids: string[]) => void
   onDeleteLocalFolder: (path: string) => void
   onRestore: (id: string) => void
   onArchive: (id: string) => void
@@ -443,6 +445,7 @@ export default function Sidebar({
   onToggleRepo,
   onAddRepo,
   onRemoveRepo,
+  onReorderRepos,
   onDeleteLocalFolder,
   onRestore,
   onArchive,
@@ -462,6 +465,26 @@ export default function Sidebar({
     onDelete,
     onRename
   }
+  /*
+   * A repo is dragged by its heading and dropped onto another group: above it in that group's top
+   * half, below it in the bottom half. Halves of the whole group, so an expanded repo with a dozen
+   * rows is as easy a target as a collapsed one.
+   */
+  const [dragged, setDragged] = useState<string | null>(null)
+  const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null)
+  const endDrag = (): void => {
+    setDragged(null)
+    setDrop(null)
+  }
+  const dropRepo = (): void => {
+    if (dragged && drop && dragged !== drop.id) {
+      const ids = repos.map((r) => r.id).filter((id) => id !== dragged)
+      ids.splice(ids.indexOf(drop.id) + (drop.after ? 1 : 0), 0, dragged)
+      onReorderRepos(ids)
+    }
+    endDrag()
+  }
+
   const localRows = groupRows(sessions, null)
   const localArchived = sessions
     .filter((s) => isLocal(s) && s.archived)
@@ -542,8 +565,32 @@ export default function Sidebar({
             .filter((s) => s.repoId === repo.id && s.archived)
             .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
-            <div className="repo-group" key={repo.id}>
-              <div className="repo-head">
+            <div
+              className={`repo-group${dragged === repo.id ? ' is-lifted' : ''}${drop?.id === repo.id && dragged !== repo.id ? (drop.after ? ' is-drop-after' : ' is-drop-before') : ''}`}
+              key={repo.id}
+              onDragOver={(e) => {
+                if (!dragged) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                const box = e.currentTarget.getBoundingClientRect()
+                const after = e.clientY > box.top + box.height / 2
+                if (drop?.id !== repo.id || drop.after !== after) setDrop({ id: repo.id, after })
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                dropRepo()
+              }}
+            >
+              <div
+                className="repo-head"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', repo.id)
+                  setDragged(repo.id)
+                }}
+                onDragEnd={endDrag}
+              >
                 <button
                   className="icon-btn-bare"
                   onClick={() => onToggleRepo(repo.id)}
@@ -551,7 +598,7 @@ export default function Sidebar({
                 >
                   <i className={`ph ph-caret-down repo-head__caret${repo.collapsed ? ' is-collapsed' : ''}`} />
                 </button>
-                <span className="repo-head__name" title={repo.path}>
+                <span className="repo-head__name" data-tip={repo.path} data-tip-hint="Drag to reorder">
                   {repo.name}
                 </span>
                 <button

@@ -109,6 +109,8 @@ const api = {
     add: (): Promise<{ repo?: Repo; error?: string }> => ipcRenderer.invoke('repo:add'),
     update: (id: string, patch: Partial<Repo>): Promise<Repo | undefined> =>
       ipcRenderer.invoke('repo:update', id, patch),
+    /** The sidebar's order, top to bottom. */
+    reorder: (ids: string[]): Promise<void> => ipcRenderer.invoke('repo:reorder', ids),
     /** What removing would do to each of the repo's sessions. */
     removePlan: (id: string): Promise<RemoveRepoPlan | null> =>
       ipcRenderer.invoke('repo:removePlan', id),

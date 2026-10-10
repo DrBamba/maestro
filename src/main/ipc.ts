@@ -356,6 +356,8 @@ export function registerIpc(): void {
 
   ipcMain.handle('repo:update', (_e, id: string, patch: Partial<Repo>) => store.updateRepo(id, patch))
 
+  ipcMain.handle('repo:reorder', (_e, ids: string[]) => store.reorderRepos(ids))
+
   /**
    * Whether a worktree cut from this ref would come with a setup script — the dialog's note promises
    * a new worktree runs one, and it must not promise that of a base whose tree has none.
