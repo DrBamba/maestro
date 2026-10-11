@@ -15,7 +15,11 @@ import type {
   UpdateStatus
 } from '@shared/types'
 import Sidebar, { sidebarOrder } from './components/Sidebar'
-import SessionView, { sessionStashKey, type SessionWindowState } from './components/SessionView'
+import SessionView, {
+  sessionStashKey,
+  type SessionArrangement,
+  type SessionWindowState
+} from './components/SessionView'
 import CommandPalette, { type Command } from './components/CommandPalette'
 import NewSessionDialog from './components/NewSessionDialog'
 import LocalSessionDialog from './components/LocalSessionDialog'
@@ -100,6 +104,7 @@ export default function App(): React.JSX.Element {
    */
   const heldTerminals = useRef<ReadonlySet<string>>(new Set())
   const windowState = useRef<Record<string, unknown>>({})
+  const arrangements = useRef<Record<string, unknown>>({})
   const restoredWindow = useRef(false)
   const [localCollapsed, setLocalCollapsed] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, GitStatus | null>>({})
@@ -114,6 +119,12 @@ export default function App(): React.JSX.Element {
    */
   const chimeOn = useRef(false)
   const editors = useRef<Record<string, EditorHandle | null>>({})
+
+  // Kept current as well as saved, so a view mounted again in this run starts from the latest.
+  const arrange = useCallback((sessionId: string, arrangement: SessionArrangement) => {
+    arrangements.current[sessionId] = arrangement
+    window.maestro.ui.arrange(sessionId, arrangement)
+  }, [])
 
   const notice = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -138,6 +149,7 @@ export default function App(): React.JSX.Element {
       setLocalRoot(snapshot.localRoot)
       heldTerminals.current = new Set(snapshot.heldTerminals)
       windowState.current = snapshot.windowState
+      arrangements.current = snapshot.arrangements
       restoredWindow.current = true
       const updated = snapshot.windowState[UPDATED_KEY]
       if (typeof updated === 'string') {
@@ -861,6 +873,8 @@ export default function App(): React.JSX.Element {
             onNotice={notice}
             heldTerminals={heldTerminals.current}
             restored={windowState.current[sessionStashKey(session.id)] as SessionWindowState | undefined}
+            arranged={arrangements.current[session.id] as SessionArrangement | undefined}
+            onArrange={arrange}
             onClaudePty={(sessionId, ptyId) => {
               claudePtys.current[sessionId] = ptyId
             }}

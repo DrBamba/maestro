@@ -52,6 +52,8 @@ export interface Snapshot {
   heldTerminals: string[]
   /** What the last window stashed about itself, keyed by what it stashed it under. */
   windowState: Record<string, unknown>
+  /** How each session's tabs were last arranged, by session id. Survives a quit, unlike the stash. */
+  arrangements: Record<string, unknown>
 }
 
 /** A terminal handed to a tab. `replay` and `exit` are set when it was already running before. */
@@ -254,6 +256,9 @@ const api = {
   ui: {
     /** Remembers something about this window for the next one; null forgets it. */
     stash: (key: string, value: unknown): void => ipcRenderer.send('ui:stash', key, value),
+    /** Remembers how a session's tabs are arranged, across quits; null forgets it. */
+    arrange: (sessionId: string, value: unknown): void =>
+      ipcRenderer.send('ui:arrange', sessionId, value),
     /** A dialog is open. An update waits for it to close rather than reloading under it. */
     busy: (busy: boolean): void => ipcRenderer.send('ui:busy', busy)
   },
