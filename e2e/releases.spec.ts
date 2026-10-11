@@ -203,16 +203,17 @@ const releases = join(process.env.MAESTRO_USER_DATA_DIR, 'releases')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 console.log('$ npm run typecheck')
 await sleep(800)
-console.log('$ npx playwright test')
+const testing = !process.argv.includes('--no-tests')
+if (testing) console.log('$ npx playwright test')
 const mode = readFileSync('stub-mode', 'utf8').trim()
-if (mode === 'slow') {
+if (testing && mode === 'slow') {
   // A test run that outlives the script unless its whole group is stopped.
   const runner = spawn('sleep', ['60'])
   writeFileSync('runner-pid', String(runner.pid))
   await new Promise((resolve) => runner.on('exit', resolve))
 }
 await sleep(1500)
-if (mode === 'fail') {
+if (testing && mode === 'fail') {
   console.error('\\nrelease: npx playwright test failed')
   process.exit(1)
 }
@@ -332,6 +333,21 @@ test('a build can be cancelled, and the update is offered again', async ({ windo
   await window.waitForTimeout(2000)
   expect(await hasBuilt(window)).toBe(false)
   await expect(window.locator('[aria-label="Retry update"]')).toHaveCount(0)
+})
+
+test('with tests skipped in settings, the button only builds main', async ({ window, profileDir }) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+  // Would fail if tested: skipping them is what lets it through.
+  await writeFile(join(scratch.repo, 'stub-mode'), 'fail')
+  scratch.commit('trusted main')
+
+  await window.click('[aria-label="Settings"]')
+  await window.click('[aria-label="Skip tests when updating"]')
+  await window.keyboard.press('Escape')
+
+  await updateButton(window).click()
+  await expect(window.locator('.sidebar__update')).toContainText('Building…', { timeout: 10_000 })
+  await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
 })
 
 test('an update finishing while a dialog is open waits for it to close', async ({

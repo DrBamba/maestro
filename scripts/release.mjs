@@ -5,6 +5,7 @@
  *   npm run release                 # build, test and publish `main`
  *   npm run release -- --ref HEAD   # something else — a branch, a commit
  *   npm run release -- --quick      # only the live-update smoke tests, not the whole suite
+ *   npm run release -- --no-tests   # no tests at all, for a ref already tested before it merged
  *
  * The commit is built in a scratch worktree of its own, so nothing half-edited in any checkout can
  * reach the running app, and two agents releasing at once take turns (a lock). A release must
@@ -40,6 +41,7 @@ const option = (name, fallback) => {
 
 const ref = option('--ref', 'main')
 const quick = flag('--quick')
+const noTests = flag('--no-tests')
 const allowRewind = flag('--allow-rewind')
 
 function fail(message) {
@@ -189,8 +191,12 @@ run('npx', ['electron-vite', 'build'], scratch)
 run('node', ['scripts/stamp.mjs', scratch], scratch)
 
 // ── test it ──────────────────────────────────────────────────────────────────
-const specs = quick ? ['e2e/live-update.spec.ts'] : []
-run('npx', ['playwright', 'test', ...specs], scratch)
+if (noTests) {
+  console.log('\nrelease: skipping tests')
+} else {
+  const specs = quick ? ['e2e/live-update.spec.ts'] : []
+  run('npx', ['playwright', 'test', ...specs], scratch)
+}
 
 // ── publish ──────────────────────────────────────────────────────────────────
 const stamp = readJson(join(scratch, 'out', 'release.json'))
