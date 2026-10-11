@@ -17,6 +17,8 @@ import { join } from 'node:path'
  */
 
 interface Fixtures {
+  /** Extra environment for the app, set per file with `test.use({ appEnv: … })`. */
+  appEnv: Record<string, string>
   app: ElectronApplication
   window: Page
   /** The throwaway profile directory, for asserting on what the app wrote. */
@@ -30,7 +32,7 @@ interface Fixtures {
    * observable by actually restarting it. `between` runs while nothing is holding the profile,
    * which is where a test can leave behind the on-disk state a crash would have left.
    */
-  relaunch: (between?: () => Promise<void>) => Promise<Page>
+  relaunch: (between?: () => Promise<void>, how?: 'quit' | 'kill' | 'exited') => Promise<Page>
 }
 
 /** Kept so the fixtures always close whichever instance is currently running. */
@@ -38,20 +40,33 @@ interface Running {
   app: ElectronApplication | null
 }
 
-async function launchApp(profileDir: string): Promise<ElectronApplication> {
+async function launchApp(
+  profileDir: string,
+  appEnv: Record<string, string>
+): Promise<ElectronApplication> {
   const binDir = join(profileDir, 'stub-bin')
   await mkdir(binDir, { recursive: true })
   const stub = join(binDir, 'claude')
   await writeFile(stub, CLAUDE_STUB, 'utf8')
   await chmod(stub, 0o755)
 
+  /*
+   * MAESTRO_E2E_EXECUTABLE runs the suite against a packaged app instead of `out/` — the only way to
+   * test what differs once bundled: the asar, and the terminal host started from inside it.
+   */
+  const packaged = process.env.MAESTRO_E2E_EXECUTABLE
   return _electron.launch({
-    args: ['out/main/index.js'],
+    ...(packaged ? { executablePath: packaged, args: [] } : { args: ['out/main/index.js'] }),
     env: {
       ...process.env,
       MAESTRO_USER_DATA_DIR: profileDir,
       // Never show the window: a test run must not take focus from the person using the machine.
       MAESTRO_HEADLESS: '1',
+      /*
+       * Terminals live in a host process that waits for a crashed app to come back before ending
+       * them. A test that is torn down without quitting should not leave its stub agents running.
+       */
+      MAESTRO_PTY_HOST_GRACE_MS: '5000',
       MAESTRO_E2E_LOG: join(profileDir, 'agent-input.log'),
       // Worktrees go in the throwaway profile too, so runs cannot collide with each other.
       MAESTRO_WORKTREE_ROOT: join(profileDir, 'worktrees'),
@@ -62,7 +77,8 @@ async function launchApp(profileDir: string): Promise<ElectronApplication> {
        */
       CLAUDE_CONFIG_DIR: join(profileDir, 'claude'),
       // Ahead of the real one, so the app resolves the stub.
-      PATH: `${binDir}:${process.env.PATH ?? ''}`
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      ...appEnv
     }
   })
 }
@@ -96,6 +112,8 @@ done
 `
 
 export const test = base.extend<Fixtures & { running: Running }>({
+  appEnv: [{}, { option: true }],
+
   profileDir: async ({}, use) => {
     const dir = await mkdtemp(join(tmpdir(), 'maestro-e2e-'))
     await use(dir)
@@ -119,19 +137,34 @@ export const test = base.extend<Fixtures & { running: Running }>({
     await use({ app: null })
   },
 
-  app: async ({ profileDir, running }, use) => {
-    running.app = await launchApp(profileDir)
+  app: async ({ profileDir, running, appEnv }, use) => {
+    running.app = await launchApp(profileDir, appEnv)
     await use(running.app)
     // Whichever instance is current, including one a relaunch put there.
     await running.app?.close()
   },
 
-  relaunch: async ({ app, profileDir, running }, use) => {
-    await use(async (between?: () => Promise<void>) => {
-      await app.close()
+  relaunch: async ({ app, profileDir, running, appEnv }, use) => {
+    /*
+     * `kill` ends the process without letting it quit — a crash, or an update replacing it. Nothing
+     * gets to shut the terminals down on the way out. `exited` waits for the app to leave by itself,
+     * as it does to relaunch onto an update.
+     */
+    await use(async (between?: () => Promise<void>, how: 'quit' | 'kill' | 'exited' = 'quit') => {
+      const current = running.app ?? app
+      if (how === 'exited') {
+        const process = current.process()
+        if (process.exitCode === null) await new Promise((resolve) => process.once('exit', resolve))
+      } else if (how === 'kill') {
+        const exited = new Promise((resolve) => current.process().once('exit', resolve))
+        current.process().kill('SIGKILL')
+        await exited
+      } else {
+        await current.close()
+      }
       running.app = null
       await between?.()
-      running.app = await launchApp(profileDir)
+      running.app = await launchApp(profileDir, appEnv)
       const window = await running.app.firstWindow()
       await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
       return window

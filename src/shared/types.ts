@@ -571,3 +571,19 @@ export interface CodeServerInfo {
   /** Human-readable reason when unavailable. */
   reason: string
 }
+
+/**
+ * Whether there is a newer Maestro to switch to, and where getting it has got to. Shown as the
+ * update button; nothing is applied until it is pressed.
+ */
+export type UpdateStatus =
+  | { state: 'none' }
+  /** `main` has commits the running build does not. Pressing builds, tests and applies them. */
+  | { state: 'available'; changes: number; subject: string }
+  /** A tested build is published and waiting. Pressing applies it. */
+  | { state: 'ready'; subject: string }
+  | { state: 'building'; step: 'build' | 'test' | 'publish' }
+  | { state: 'applying' }
+  | { state: 'failed'; message: string }
+  /** The build needs a new terminal host, which only a real restart can bring. */
+  | { state: 'restart'; subject: string }

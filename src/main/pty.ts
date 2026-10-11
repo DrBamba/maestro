@@ -1,21 +1,27 @@
-import { createRequire } from 'node:module'
+import { app, type WebContents } from 'electron'
+import { spawn as spawnProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import type { WebContents } from 'electron'
-import type { IPty } from 'node-pty'
+import { openSync, closeSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { connect, type Socket } from 'node:net'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { PtyKind } from '@shared/types'
 import { fallbackShell, platformOf } from '@shared/platform'
+import {
+  HOST_PROTOCOL,
+  hostSocketPath,
+  type ClientMessage,
+  type HostEntry,
+  type HostMessage
+} from './ptyProtocol'
 
-// node-pty is a native CJS addon; createRequire keeps it loadable from an ESM main process.
-const require = createRequire(import.meta.url)
-const pty = require('node-pty') as typeof import('node-pty')
-
-/** Output is coalesced over this window before crossing the IPC boundary. */
-const FLUSH_MS = 4
-/** …or immediately once this much has piled up, so bulk output stays responsive. */
-const FLUSH_BYTES = 64 * 1024
+const here = dirname(fileURLToPath(import.meta.url))
 
 export interface SpawnOptions {
   sessionId: string
+  /** The tab this terminal fills — `<sessionId>:<tab key>` — so a reloaded window can find it. */
+  slot: string
   kind: PtyKind
   label: string
   cwd: string
@@ -28,25 +34,16 @@ export interface SpawnOptions {
   onExit?: (exitCode: number) => void
 }
 
-/** How much trailing output to retain, so a process's exit can be explained. */
-const TAIL_LIMIT = 4096
-
-interface Entry {
+/** A terminal a window picked back up: what it printed so far, and how it ended if it has. */
+export interface Attached {
   id: string
-  sessionId: string
-  kind: PtyKind
-  label: string
-  proc: IPty
-  buffer: string[]
-  bytes: number
-  timer: NodeJS.Timeout | null
-  exited: boolean
-  /**
-   * Rolling tail of what the process printed. A failed `claude --resume` explains itself on
-   * stdout — "currently running as a background agent" — and that is far more reliable than
-   * guessing liveness from timestamps, so the exit event carries it.
-   */
-  tail: string
+  replay: string
+  exit?: { exitCode: number; tail: string }
+}
+
+interface Entry extends HostEntry {
+  /** Whether the current window is showing this terminal. Output is only sent for these. */
+  claimed: boolean
 }
 
 function defaultShell(): string {
@@ -54,96 +51,248 @@ function defaultShell(): string {
 }
 
 /**
- * Owns every PTY in the app. Output is batched per terminal and pushed to the renderer;
- * xterm.js writes it straight into its own buffer.
+ * Every terminal in the app, as seen from main. The processes themselves live in the terminal host
+ * (ptyHost.ts), which outlives this process; this keeps a mirror of them and relays between the
+ * host and the window.
  */
 export class PtyManager {
   private entries = new Map<string, Entry>()
   private target: WebContents | null = null
+  private socket: Socket | null = null
+  private outbox: string[] = []
+  private exitHandlers = new Map<string, (exitCode: number) => void>()
+  private recoveredExit: ((entry: HostEntry) => void) | null = null
+  private requests = new Map<number, (message: HostMessage) => void>()
+  private nextReq = 1
+  private connecting: Promise<void> | null = null
 
   attach(webContents: WebContents): void {
     this.target = webContents
   }
 
-  private send(channel: string, payload: unknown): void {
-    if (this.target && !this.target.isDestroyed()) {
-      this.target.send(channel, payload)
-    }
+  /**
+   * What to do about a terminal that exited with nobody left to hear it — its main process was
+   * replaced in the meantime, so the callback it was spawned with is gone.
+   */
+  onRecoveredExit(handler: (entry: HostEntry) => void): void {
+    this.recoveredExit = handler
   }
 
-  private flush(entry: Entry): void {
-    if (entry.timer) {
-      clearTimeout(entry.timer)
-      entry.timer = null
-    }
-    if (entry.buffer.length === 0) return
-    const data = entry.buffer.join('')
-    entry.buffer = []
-    entry.bytes = 0
-    this.send('pty:data', { id: entry.id, data })
+  // ── connection ─────────────────────────────────────────────────────────────
+  connect(): Promise<void> {
+    this.connecting ??= this.open().finally(() => {
+      this.connecting = null
+    })
+    return this.connecting
   }
 
-  private queue(entry: Entry, chunk: string): void {
-    entry.tail = (entry.tail + chunk).slice(-TAIL_LIMIT)
-    entry.buffer.push(chunk)
-    entry.bytes += chunk.length
-    if (entry.bytes >= FLUSH_BYTES) {
-      this.flush(entry)
-      return
+  private async open(): Promise<void> {
+    const path = hostSocketPath(app.getPath('userData'), HOST_PROTOCOL)
+    let socket = await tryConnect(path)
+    if (!socket) {
+      startHost(path)
+      const deadline = Date.now() + 10_000
+      while (!socket && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        socket = await tryConnect(path)
+      }
     }
-    if (!entry.timer) {
-      entry.timer = setTimeout(() => this.flush(entry), FLUSH_MS)
-    }
-  }
+    if (!socket) throw new Error(`terminal host did not start (${path})`)
 
-  spawn(opts: SpawnOptions): { id: string } {
-    const proc = pty.spawn(opts.command, opts.args, {
-      name: 'xterm-256color',
-      cwd: opts.cwd,
-      cols: Math.max(opts.cols, 2),
-      rows: Math.max(opts.rows, 2),
-      env: {
-        ...(process.env as Record<string, string>),
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        ...opts.env
+    this.socket = socket
+    socket.setEncoding('utf8')
+    let buffered = ''
+    socket.on('data', (chunk: string) => {
+      buffered += chunk
+      let at: number
+      while ((at = buffered.indexOf('\n')) >= 0) {
+        const line = buffered.slice(0, at)
+        buffered = buffered.slice(at + 1)
+        if (line) this.receive(JSON.parse(line) as HostMessage)
       }
     })
+    socket.on('error', () => {})
+    socket.on('close', () => this.lost(socket!))
 
-    const entry: Entry = {
-      id: randomUUID(),
+    this.post({ t: 'hello', protocol: HOST_PROTOCOL })
+    for (const line of this.outbox.splice(0)) socket.write(line)
+
+    const listed = await this.request<{ t: 'list'; entries: HostEntry[] }>({ t: 'list', req: 0 })
+    for (const entry of listed.entries) {
+      if (!this.entries.has(entry.id)) this.entries.set(entry.id, { ...entry, claimed: false })
+    }
+    for (const entry of listed.entries) {
+      if (entry.exited && !entry.exitHandled) this.handleExit(entry.id)
+    }
+    console.log(`[maestro] terminal host connected (${listed.entries.length} terminal(s))`)
+  }
+
+  /** The host went away, and every terminal with it. */
+  private lost(socket: Socket): void {
+    if (this.socket !== socket) return
+    this.socket = null
+    if (this.shuttingDown) return
+    console.error('[maestro] terminal host disconnected')
+    for (const entry of this.entries.values()) {
+      if (entry.exited) continue
+      entry.exited = true
+      entry.exitCode = -1
+      if (entry.claimed) this.send('pty:exit', { id: entry.id, exitCode: -1, signal: null, tail: entry.tail })
+      this.exitHandlers.get(entry.id)?.(-1)
+      this.exitHandlers.delete(entry.id)
+    }
+    void this.connect().catch((err) => console.error('[maestro] terminal host restart failed', err))
+  }
+
+  private post(message: ClientMessage): void {
+    const line = JSON.stringify(message) + '\n'
+    if (this.socket && !this.socket.destroyed) this.socket.write(line)
+    else this.outbox.push(line)
+  }
+
+  private request<T>(message: Extract<ClientMessage, { req: number }>): Promise<T> {
+    const req = this.nextReq++
+    return new Promise<T>((resolve) => {
+      this.requests.set(req, resolve as (message: HostMessage) => void)
+      this.post({ ...message, req })
+    })
+  }
+
+  private receive(message: HostMessage): void {
+    if ('req' in message) {
+      const resolve = this.requests.get(message.req)
+      this.requests.delete(message.req)
+      resolve?.(message)
+      return
+    }
+    if (message.t === 'hello') {
+      if (message.protocol !== HOST_PROTOCOL) {
+        console.error(`[maestro] terminal host speaks protocol ${message.protocol}, expected ${HOST_PROTOCOL}`)
+      }
+      return
+    }
+    const entry = this.entries.get(message.id)
+    if (!entry) return
+    if (message.t === 'data') {
+      entry.tail = (entry.tail + message.data).slice(-4096)
+      if (entry.claimed) this.send('pty:data', { id: entry.id, data: message.data })
+      return
+    }
+    entry.exited = true
+    entry.exitCode = message.exitCode
+    entry.signal = message.signal
+    entry.tail = message.tail
+    this.handleExit(entry.id)
+  }
+
+  private handleExit(id: string): void {
+    const entry = this.entries.get(id)
+    if (!entry) return
+    const exitCode = entry.exitCode ?? -1
+    if (entry.claimed) {
+      this.send('pty:exit', { id, exitCode, signal: entry.signal, tail: entry.tail })
+    }
+    const handler = this.exitHandlers.get(id)
+    this.exitHandlers.delete(id)
+    if (handler) handler(exitCode)
+    else this.recoveredExit?.(entry)
+    entry.exitHandled = true
+    this.post({ t: 'exit-handled', id })
+  }
+
+  private send(channel: string, payload: unknown): void {
+    if (this.target && !this.target.isDestroyed()) this.target.send(channel, payload)
+  }
+
+  // ── terminals ──────────────────────────────────────────────────────────────
+  spawn(opts: SpawnOptions): { id: string } {
+    const id = randomUUID()
+    // Superseded, like the host does: only the newest terminal in a tab is the tab's.
+    for (const [other, entry] of this.entries) {
+      if (entry.slot === opts.slot && entry.exited) this.entries.delete(other)
+    }
+    this.entries.set(id, {
+      id,
+      slot: opts.slot,
       sessionId: opts.sessionId,
       kind: opts.kind,
       label: opts.label,
-      proc,
+      exited: false,
+      exitCode: null,
+      signal: null,
       tail: '',
-      buffer: [],
-      bytes: 0,
-      timer: null,
-      exited: false
-    }
-    this.entries.set(entry.id, entry)
-
-    proc.onData((chunk) => this.queue(entry, chunk))
-    proc.onExit(({ exitCode, signal }) => {
-      entry.exited = true
-      this.flush(entry)
-      this.send('pty:exit', {
-        id: entry.id,
-        exitCode,
-        signal: signal ?? null,
-        tail: entry.tail
-      })
-      opts.onExit?.(exitCode)
+      exitHandled: false,
+      claimed: true
     })
+    if (opts.onExit) this.exitHandlers.set(id, opts.onExit)
 
-    return { id: entry.id }
+    const env: Record<string, string> = {}
+    for (const [key, value] of Object.entries({
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      ...opts.env
+    })) {
+      if (value !== undefined) env[key] = value
+    }
+
+    this.post({
+      t: 'spawn',
+      id,
+      slot: opts.slot,
+      sessionId: opts.sessionId,
+      kind: opts.kind,
+      label: opts.label,
+      cwd: opts.cwd,
+      command: opts.command,
+      args: opts.args,
+      cols: opts.cols,
+      rows: opts.rows,
+      env
+    })
+    return { id }
+  }
+
+  /**
+   * Hands a tab the terminal it already had, if the host still holds one nobody is showing — the
+   * window was reloaded, or main was replaced under it. Null means start a new one.
+   */
+  async claim(slot: string): Promise<Attached | null> {
+    const candidates = [...this.entries.values()].filter((e) => e.slot === slot && !e.claimed)
+    const entry = candidates.find((e) => !e.exited) ?? candidates[0]
+    if (!entry) return null
+    // Claimed before the await, so a second request for the same tab cannot take it too.
+    entry.claimed = true
+    const { data } = await this.request<{ t: 'replay'; data: string }>({ t: 'replay', req: 0, id: entry.id })
+    return {
+      id: entry.id,
+      replay: data,
+      exit: entry.exited ? { exitCode: entry.exitCode ?? -1, tail: entry.tail } : undefined
+    }
+  }
+
+  /** The window was replaced: nothing is on screen until it asks for its terminals again. */
+  releaseAll(): void {
+    for (const entry of this.entries.values()) entry.claimed = false
+  }
+
+  /** Tabs with a terminal waiting for them. */
+  heldSlots(): string[] {
+    return [...new Set([...this.entries.values()].filter((e) => !e.claimed).map((e) => e.slot))]
   }
 
   /** A login-interactive shell in the worktree. */
-  spawnShell(sessionId: string, cwd: string, label: string, cols: number, rows: number): { id: string } {
+  spawnShell(
+    sessionId: string,
+    slot: string,
+    cwd: string,
+    label: string,
+    cols: number,
+    rows: number
+  ): { id: string } {
     return this.spawn({
       sessionId,
+      slot,
       kind: 'shell',
       label,
       cwd,
@@ -162,6 +311,7 @@ export class PtyManager {
    */
   spawnScript(
     sessionId: string,
+    slot: string,
     cwd: string,
     label: string,
     command: string,
@@ -173,6 +323,7 @@ export class PtyManager {
     const script = opts.keepOpen ? `${command}; exec ${shell} -l -i` : command
     return this.spawn({
       sessionId,
+      slot,
       kind: 'script',
       label,
       cwd,
@@ -187,31 +338,18 @@ export class PtyManager {
 
   write(id: string, data: string): void {
     const entry = this.entries.get(id)
-    if (entry && !entry.exited) entry.proc.write(data)
+    if (entry && !entry.exited) this.post({ t: 'write', id, data })
   }
 
   resize(id: string, cols: number, rows: number): void {
     const entry = this.entries.get(id)
-    if (!entry || entry.exited) return
-    try {
-      entry.proc.resize(Math.max(cols, 2), Math.max(rows, 2))
-    } catch {
-      // The process can exit between the renderer measuring and this call landing.
-    }
+    if (entry && !entry.exited) this.post({ t: 'resize', id, cols, rows })
   }
 
   kill(id: string): void {
-    const entry = this.entries.get(id)
-    if (!entry) return
-    this.flush(entry)
-    if (!entry.exited) {
-      try {
-        entry.proc.kill()
-      } catch {
-        // Already gone.
-      }
-    }
+    if (!this.entries.has(id)) return
     this.entries.delete(id)
+    this.post({ t: 'kill', id })
   }
 
   /** The session a pty belongs to, and whether it is the session's Claude. */
@@ -239,28 +377,70 @@ export class PtyManager {
     return [...ids]
   }
 
+  // ── window state ───────────────────────────────────────────────────────────
+  /** Kept by the host, so a tab layout outlives the main process as its terminals do. */
+  stashSet(key: string, value: unknown): void {
+    this.post({ t: 'stash-set', key, value: value ?? null })
+  }
+
+  async stashGet(): Promise<Record<string, unknown>> {
+    const { value } = await this.request<{ t: 'stash'; value: Record<string, unknown> }>({
+      t: 'stash-get',
+      req: 0
+    })
+    return value
+  }
+
+  private shuttingDown = false
+
   /**
-   * Asks every process to exit, then waits briefly before forcing it. An abrupt kill can cut
-   * Claude off mid-write, so it gets a moment to flush its transcript.
+   * Ends every terminal and the host with them. Claude gets a moment to flush its transcript
+   * before anything is forced.
    */
   async shutdown(graceMs = 1500): Promise<void> {
-    for (const entry of this.entries.values()) {
-      if (entry.exited) continue
-      this.flush(entry)
-      try {
-        entry.proc.kill('SIGTERM')
-      } catch {
-        // Already gone.
-      }
-    }
-
-    const deadline = Date.now() + graceMs
-    while (Date.now() < deadline) {
-      if ([...this.entries.values()].every((entry) => entry.exited)) break
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
-    this.killAll()
+    if (!this.socket) return
+    this.shuttingDown = true
+    await Promise.race([
+      this.request({ t: 'shutdown', req: 0, graceMs }),
+      new Promise((resolve) => setTimeout(resolve, graceMs + 2000))
+    ])
+    this.entries.clear()
   }
+
+  /** Lets go of the host without ending anything, for a relaunch that will pick it all back up. */
+  detach(): void {
+    this.shuttingDown = true
+    this.socket?.end()
+  }
+}
+
+function tryConnect(path: string): Promise<Socket | null> {
+  return new Promise((resolve) => {
+    const socket = connect(path)
+    socket.once('connect', () => resolve(socket))
+    socket.once('error', () => resolve(null))
+  })
+}
+
+/** Starts a host in its own process group, so it survives this process and its signals. */
+function startHost(socketPath: string): void {
+  const userData = app.getPath('userData')
+  // Resolved from the app, not from this file: a release runs its main from a directory with no
+  // node_modules of its own.
+  const nodePty = createRequire(join(app.getAppPath(), 'package.json')).resolve('node-pty')
+  const log = openSync(join(userData, 'pty-host.log'), 'a')
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    MAESTRO_NODE_PTY: nodePty
+  }
+  const child = spawnProcess(process.execPath, [join(here, 'ptyHost.js'), socketPath], {
+    detached: true,
+    stdio: ['ignore', log, log],
+    env
+  })
+  child.unref()
+  closeSync(log)
 }
 
 export const ptys = new PtyManager()

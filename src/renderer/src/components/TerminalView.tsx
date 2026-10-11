@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { THEMES, type ThemeName } from '@shared/theme'
 import { terminalTheme } from '../theme'
+import type { PtyAttach } from '../../../preload/index'
 
 /** The theme's dim grey as a 24-bit SGR sequence, for the lines the terminal writes itself. */
 function dim(theme: ThemeName): string {
@@ -22,8 +23,11 @@ function monoStack(): string {
 export interface TerminalViewProps {
   /** The resolved ground to draw on. Changing it recolours a terminal that is already running. */
   theme: ThemeName
-  /** Creates the PTY once the terminal has been measured. Returns the pty id. */
-  spawn: (cols: number, rows: number) => Promise<{ id: string } | null>
+  /**
+   * Creates the PTY once the terminal has been measured — or hands back the one this tab already had,
+   * with the output it printed while no window was showing it.
+   */
+  spawn: (cols: number, rows: number) => Promise<PtyAttach | null>
   /**
    * Starts, and restarts, the process. 0 means do not start — the parent is showing a launcher
    * instead. Bumping it spawns again into the same terminal, keeping earlier scrollback.
@@ -62,12 +66,15 @@ export default function TerminalView({
   const fitRef = useRef<FitAddon | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const ptyIdRef = useRef<string | null>(null)
+  // The last process, even once it has exited: the host keeps a finished one's output until told.
+  const lastIdRef = useRef<string | null>(null)
   // Keystrokes typed before the PTY exists would otherwise be dropped.
   const pendingRef = useRef<string[]>([])
   const exitRef = useRef(onExit)
   const spawnedRef = useRef(onSpawned)
   const spawnRef = useRef(spawn)
   const disposedRef = useRef(false)
+  const exitedRef = useRef<(exitCode: number, tail: string) => void>(() => {})
   // Read by the mount effect, which must not re-run for a colour change.
   const themeRef = useRef(theme)
 
@@ -79,6 +86,16 @@ export default function TerminalView({
   useLayoutEffect(() => {
     const host = hostRef.current
     if (!host) return
+
+    const exited = (exitCode: number, tail: string): void => {
+      // Our own line rather than the process's, so it is dimmed to whichever ground it lands on —
+      // a fixed grey chosen for near-black is unreadable once the terminal is paper.
+      term.write(`\r\n${dim(themeRef.current)}— process exited (${exitCode}) —\x1b[0m\r\n`)
+      ptyIdRef.current = null
+      pendingRef.current = []
+      exitRef.current?.(exitCode, tail)
+    }
+    exitedRef.current = exited
 
     const term = new Terminal({
       allowProposedApi: true,
@@ -128,13 +145,7 @@ export default function TerminalView({
       if (id === ptyIdRef.current) term.write(data)
     })
     const offExit = window.maestro.pty.onExit(({ id, exitCode, tail }) => {
-      if (id !== ptyIdRef.current) return
-      // Our own line rather than the process's, so it is dimmed to whichever ground it lands on —
-      // a fixed grey chosen for near-black is unreadable once the terminal is paper.
-      term.write(`\r\n${dim(themeRef.current)}— process exited (${exitCode}) —\x1b[0m\r\n`)
-      ptyIdRef.current = null
-      pendingRef.current = []
-      exitRef.current?.(exitCode, tail)
+      if (id === ptyIdRef.current) exited(exitCode, tail)
     })
 
     const observer = new ResizeObserver(() => {
@@ -154,7 +165,7 @@ export default function TerminalView({
       observer.disconnect()
       offData()
       offExit()
-      const id = ptyIdRef.current
+      const id = ptyIdRef.current ?? lastIdRef.current
       if (id) window.maestro.pty.kill(id)
 
       /*
@@ -211,9 +222,11 @@ export default function TerminalView({
     if (!term || !fit) return
 
     // A previous process may still be attached if the parent restarts without an exit.
-    if (ptyIdRef.current) {
-      window.maestro.pty.kill(ptyIdRef.current)
+    const previous = ptyIdRef.current ?? lastIdRef.current
+    if (previous) {
+      window.maestro.pty.kill(previous)
       ptyIdRef.current = null
+      lastIdRef.current = null
     }
 
     let cancelled = false
@@ -226,8 +239,11 @@ export default function TerminalView({
       }
       void spawnRef.current(term.cols, term.rows).then((handle) => {
         if (cancelled || disposedRef.current || !handle) return
+        if (handle.replay) term.write(handle.replay)
         ptyIdRef.current = handle.id
+        lastIdRef.current = handle.id
         spawnedRef.current?.(handle.id)
+        if (handle.exit) return exitedRef.current(handle.exit.exitCode, handle.exit.tail)
         for (const chunk of pendingRef.current) window.maestro.pty.write(handle.id, chunk)
         pendingRef.current = []
         window.maestro.pty.resize(handle.id, term.cols, term.rows)

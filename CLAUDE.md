@@ -2,6 +2,13 @@
 
 See [`README.md`](./README.md) for what this is and [`PLAN.md`](./PLAN.md) for why.
 
+## Shipping to the running app
+
+The user runs the installed Maestro while you edit its source. Your edits never reach it directly.
+Try changes in your own `npm run dev` window, then merge to `main`. The running app then offers
+**Update Maestro**, which builds, tests and applies `main` without touching any agent. Leave that
+press to the user rather than running `npm run release` yourself.
+
 ## UI copy
 
 Every string a user reads — modal notes, checkbox labels, hints, empty states, toasts, tooltips,

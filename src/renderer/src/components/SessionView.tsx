@@ -35,7 +35,8 @@ import { useShortcuts } from '../lib/shortcuts'
 interface ScriptTab {
   key: string
   label: string
-  spawn: (cols: number, rows: number) => Promise<{ id: string } | null>
+  /** The setup script, or one of the repo's run scripts by id. */
+  source: { kind: 'setup' } | { kind: 'script'; scriptId: string }
 }
 
 /**
@@ -48,6 +49,51 @@ interface ConsoleTab {
   /** Bumped to start the shell, and again to restart it after it exits. 0 means never opened. */
   token: number
   running: boolean
+}
+
+/**
+ * What a window keeps about a session so the next one can put it back — after a reload, or an
+ * update that replaced the app around its running terminals.
+ */
+export interface SessionWindowState {
+  layout: LayoutNode
+  focusKey: string
+  consoles: { key: string; label: string; started: boolean }[]
+  consoleKeys: number
+  scriptTabs: ScriptTab[]
+  runningScripts: string[]
+  setupRan: boolean
+}
+
+export function sessionStashKey(sessionId: string): string {
+  return `session:${sessionId}`
+}
+
+/**
+ * The stashed state, minus the tabs that have nothing left to show. A script tab whose terminal is
+ * gone would run its script again on mount; a console's only costs a fresh shell when it is opened.
+ */
+function restoreWindowState(
+  sessionId: string,
+  saved: SessionWindowState | undefined,
+  held: ReadonlySet<string>
+): SessionWindowState | undefined {
+  if (!saved) return undefined
+  const isHeld = (key: string): boolean => held.has(`${sessionId}:${key}`)
+  const scriptTabs = saved.scriptTabs.filter((tab) => isHeld(tab.key))
+  const kept = new Set(['claude', 'editor', ...saved.consoles.map((c) => c.key), ...scriptTabs.map((t) => t.key)])
+  let layout = saved.layout
+  for (const key of saved.scriptTabs.map((t) => t.key)) {
+    if (!kept.has(key)) layout = removeTab(layout, key)
+  }
+  if (!groupOf(layout, 'claude')) layout = makeGroup([...kept], 'claude')
+  return {
+    ...saved,
+    layout,
+    focusKey: groupOf(layout, saved.focusKey) ? saved.focusKey : 'claude',
+    consoles: saved.consoles.map((c) => ({ ...c, started: c.started && isHeld(c.key) })),
+    scriptTabs
+  }
 }
 
 /** "Console", then "Console 2" — the lowest number free, so closing one hands its name back. */
@@ -87,6 +133,10 @@ interface SessionViewProps {
   theme: ThemeName
   onPreferences: (patch: Partial<Preferences>) => void
   onNotice: (message: string) => void
+  /** Tabs whose terminal is still running from before this window, as `<sessionId>:<tab key>`. */
+  heldTerminals: ReadonlySet<string>
+  /** What the previous window stashed about this session, if there was one. */
+  restored?: SessionWindowState
   onClaudePty: (sessionId: string, ptyId: string) => void
   onEditorHandle: (sessionId: string, handle: EditorHandle | null) => void
   onStatus: (sessionId: string, status: GitStatus | null) => void
@@ -106,13 +156,17 @@ export default function SessionView({
   theme,
   onPreferences,
   onNotice,
+  heldTerminals,
+  restored,
   onClaudePty,
   onEditorHandle,
   onStatus
 }: SessionViewProps): React.JSX.Element {
   const [status, setStatus] = useState<GitStatus | null>(null)
-  const [scriptTabs, setScriptTabs] = useState<ScriptTab[]>([])
-  const [runningScripts, setRunningScripts] = useState<string[]>([])
+  // Read once, on mount: a window puts itself back together from this and then carries on.
+  const [initial] = useState(() => restoreWindowState(session.id, restored, heldTerminals))
+  const [scriptTabs, setScriptTabs] = useState<ScriptTab[]>(initial?.scriptTabs ?? [])
+  const [runningScripts, setRunningScripts] = useState<string[]>(initial?.runningScripts ?? [])
 
   const editorRef = useRef<EditorHandle | null>(null)
 
@@ -121,10 +175,10 @@ export default function SessionView({
    * Where the panes are, and which tab the keyboard belongs to. Both start as they did before any
    * of this was arrangeable: one pane holding every tab, with Claude in front of it.
    */
-  const [layout, setLayout] = useState<LayoutNode>(() =>
-    makeGroup(['claude', 'editor', 'console-1'], 'claude')
+  const [layout, setLayout] = useState<LayoutNode>(
+    () => initial?.layout ?? makeGroup(['claude', 'editor', 'console-1'], 'claude')
   )
-  const [focusKey, setFocusKey] = useState('claude')
+  const [focusKey, setFocusKey] = useState(initial?.focusKey ?? 'claude')
   /**
    * Counts the times the keyboard has been handed somewhere. The panes watch it as well as their own
    * focused flag, because a tab dragged into another pane is a new element by the time the drag ends
@@ -134,7 +188,7 @@ export default function SessionView({
 
   // Both are read by callbacks that outlive the render they were made in.
   const layoutRef = useRef(layout)
-  const focusRef = useRef(focusKey)
+  const focusRef = useRef<string>(focusKey)
   layoutRef.current = layout
 
   /**
@@ -252,7 +306,7 @@ export default function SessionView({
 
   // ── setup script ──────────────────────────────────────────────────────────
   /** Whether this view has a setup script of its own to speak of — see {@link setupLabel}. */
-  const [setupRan, setSetupRan] = useState(false)
+  const [setupRan, setSetupRan] = useState(initial?.setupRan ?? false)
 
   /*
    * Whether anything that needs a built worktree still has to wait — Claude's opening turn, and any
@@ -276,16 +330,9 @@ export default function SessionView({
   const openSetupTab = useCallback(() => {
     setSetupRan(true)
     const key = `setup-${Date.now()}`
-    setScriptTabs((tabs) => [
-      ...tabs,
-      {
-        key,
-        label: 'setup',
-        spawn: (cols, rows) => window.maestro.pty.setup(session.id, cols, rows)
-      }
-    ])
+    setScriptTabs((tabs) => [...tabs, { key, label: 'setup', source: { kind: 'setup' } }])
     openTab(key)
-  }, [session.id, openTab])
+  }, [openTab])
 
   /*
    * `pending` is main's word for "this worktree carries a `.maestro/setup.sh` it has not run yet", so
@@ -296,7 +343,8 @@ export default function SessionView({
    * everything waiting on the script, not the output: a five-minute install nobody can see is worse
    * than one in a tab they can switch away from.
    */
-  const setupStarted = useRef(false)
+  // A window put back together already had its setup tab, if the script was ever run.
+  const setupStarted = useRef(initial !== undefined)
   useEffect(() => {
     if (setupStarted.current) return
     if (session.setupState !== 'pending') return
@@ -382,11 +430,17 @@ export default function SessionView({
    * session holds one, and a shell nobody has looked at is a process for nothing. The ones added
    * afterwards were asked for, so they start straight away.
    */
-  const [consoles, setConsoles] = useState<ConsoleTab[]>([
-    { key: 'console-1', label: 'Console', token: 0, running: false }
-  ])
+  const [consoles, setConsoles] = useState<ConsoleTab[]>(
+    () =>
+      initial?.consoles.map((c) => ({
+        key: c.key,
+        label: c.label,
+        token: c.started ? 1 : 0,
+        running: c.started
+      })) ?? [{ key: 'console-1', label: 'Console', token: 0, running: false }]
+  )
   // Keys are never reused, even when a name is: a new console must not land in a dead one's pane.
-  const consoleKeys = useRef(1)
+  const consoleKeys = useRef(initial?.consoleKeys ?? 1)
   const [renaming, setRenaming] = useState<string | null>(null)
   // Escape has to leave the field without the blur it causes writing the name anyway.
   const abandonRename = useRef(false)
@@ -452,18 +506,11 @@ export default function SessionView({
       const script = repo?.runScripts.find((s) => s.id === scriptId)
       if (!script) return
       const key = `script-${scriptId}-${Date.now()}`
-      setScriptTabs((tabs) => [
-        ...tabs,
-        {
-          key,
-          label: script.name,
-          spawn: (cols, rows) => window.maestro.pty.script(session.id, scriptId, cols, rows)
-        }
-      ])
+      setScriptTabs((tabs) => [...tabs, { key, label: script.name, source: { kind: 'script', scriptId } }])
       openTab(key)
       setRunningScripts((names) => [...new Set([...names, script.name])])
     },
-    [repo?.runScripts, session.id, openTab]
+    [repo?.runScripts, openTab]
   )
 
   /*
@@ -524,7 +571,9 @@ export default function SessionView({
    * interruption is stated instead of being something the user has to notice from cut-off output.
    */
   const wasInterrupted = session.interruptedAt !== undefined
-  const askFirst = !session.worktreeOwned || wasInterrupted || (resume && sharedFolder)
+  // A Claude still running from before this window is simply shown again; there is nothing to ask.
+  const claudeHeld = heldTerminals.has(`${session.id}:claude`)
+  const askFirst = !claudeHeld && (!session.worktreeOwned || wasInterrupted || (resume && sharedFolder))
 
   /*
    * A session created with a first message starts Claude *working*, so it must not start before the
@@ -536,7 +585,9 @@ export default function SessionView({
    * they are sitting in front of the setup tab while they do — so the hold would buy nothing and
    * cost them the prompt they opened the session to write in.
    */
-  const heldForSetup = useRef(!askFirst && session.initialPrompt !== undefined && setupHolds)
+  const heldForSetup = useRef(
+    !claudeHeld && !askFirst && session.initialPrompt !== undefined && setupHolds
+  )
 
   const [launch, setLaunch] = useState<ClaudeLaunch | null>(
     askFirst || heldForSetup.current ? null : { mode: resume ? 'continue' : 'new' }
@@ -614,6 +665,21 @@ export default function SessionView({
     setLayout(fresh)
     focus(fresh.active)
   }, [consoles, scriptTabs, focus])
+
+  // Kept current for the next window. Forgotten when the session's view goes away for good.
+  useEffect(() => {
+    const state: SessionWindowState = {
+      layout,
+      focusKey,
+      consoles: consoles.map((c) => ({ key: c.key, label: c.label, started: c.token > 0 })),
+      consoleKeys: consoleKeys.current,
+      scriptTabs,
+      runningScripts,
+      setupRan
+    }
+    window.maestro.ui.stash(sessionStashKey(session.id), state)
+  }, [session.id, layout, focusKey, consoles, scriptTabs, runningScripts, setupRan])
+  useEffect(() => () => window.maestro.ui.stash(sessionStashKey(session.id), null), [session.id])
 
   const boardTabs: BoardTab[] = [
     {
@@ -699,7 +765,7 @@ export default function SessionView({
       pane: (
         <TerminalView
           theme={theme}
-          spawn={(cols, rows) => window.maestro.pty.shell(session.id, shell.label, cols, rows)}
+          spawn={(cols, rows) => window.maestro.pty.shell(session.id, shell.key, shell.label, cols, rows)}
           startToken={shell.token}
           hidden={hidden(shell.key)}
           autoFocus={holdsFocus(shell.key)}
@@ -721,7 +787,11 @@ export default function SessionView({
       pane: (
         <TerminalView
           theme={theme}
-          spawn={script.spawn}
+          spawn={(cols, rows) =>
+            script.source.kind === 'setup'
+              ? window.maestro.pty.setup(session.id, script.key, cols, rows)
+              : window.maestro.pty.script(session.id, script.key, script.source.scriptId, cols, rows)
+          }
           startToken={1}
           hidden={hidden(script.key)}
           autoFocus={holdsFocus(script.key)}

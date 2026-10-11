@@ -12,12 +12,13 @@
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && electron-vite build && node scripts/stamp.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "rebuild": "electron-builder install-app-deps",
     "postinstall": "install-electron && electron-builder install-app-deps",
     "dist": "bash scripts/dist.sh",
     "install-stable": "npm run dist -- mac && rm -rf /Applications/Maestro.app && cp -R dist/mac-arm64/Maestro.app /Applications/ && echo 'Maestro.app installed \u2014 open it from /Applications'",
+    "release": "node scripts/release.mjs",
     "e2e": "npm run build && playwright test",
     "e2e:only": "playwright test",
     "e2e:linux": "linux/test.sh"

@@ -418,6 +418,11 @@ class Watcher extends EventEmitter {
     })
   }
 
+  /** Reads a session's state file again, for events written while nothing was watching. */
+  refresh(sessionId: string): void {
+    this.schedule(sessionId)
+  }
+
   /** fs.watch fires several times per append; collapse them. */
   private schedule(sessionId: string): void {
     const existing = this.pending.get(sessionId)

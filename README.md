@@ -105,13 +105,48 @@ Native modules are compiled per platform, so a Linux build has to happen on Linu
 targets on Ubuntu: its `postinst` sets `chrome-sandbox` up correctly, so 24.04's user-namespace
 restriction is a non-issue, and it declares `git` and the Electron libraries as dependencies. The
 `.desktop` entry it installs is `io.github.drbamba.maestro.desktop`, which the app announces itself as
-([`index.ts`](./src/main/index.ts)) so the dock lights up the launcher rather than adding a second
+([`app.ts`](./src/main/app.ts)) so the dock lights up the launcher rather than adding a second
 nameless icon beside it.
 
 The app icon lives in [`build/`](./build/README.md): `icon.svg` is the master — variant 6a from the
 *Maestro Icon* Claude Design project — and the PNGs beside it are rendered from it by
 `linux/test.sh icon`. macOS's `.icns` and Linux's `hicolor` set are both built from those at package
 time.
+
+### Updating Maestro while it runs
+
+Maestro is developed with Maestro, so the copy you are working in has to take changes without
+being closed — and without running anything unfinished.
+
+- **While building a change:** `npm run dev` in the session's worktree opens a separate "Maestro
+  Dev" window that updates on every save.
+- **Once it is merged to `main`:** the running app shows **Update Maestro** above the sidebar
+  footer. Pressing it builds `main` in a scratch worktree, runs the e2e suite against the build, and
+  switches over. A change that only touches the window reloads it; one that touches main relaunches
+  the app. Running agents carry on either way. If a dialog is open when the build finishes, the
+  switch waits for it to close.
+
+Nothing is applied until the button is pressed. A failed build says whether it failed to build or
+failed its tests, and offers the log and a retry. `npm run release` is the same pipeline from a
+terminal (`--quick` runs only the live-update tests); what it publishes also waits for the button.
+
+The rules that keep it unbroken:
+
+- **Terminals live in a host process**, not in the app ([`ptyHost.ts`](./src/main/ptyHost.ts)). An
+  update, a reload or a crash replaces the app around them. The next window reattaches and replays
+  their recent output, and puts the tabs and panes back. Quitting still ends them.
+- **Only tested commits ship.** Nothing runs from a checkout, so a half-saved file in any
+  worktree cannot reach the app you are using.
+- **A broken release backs itself out.** One that fails to load, or does not bring up a working
+  window in time, is marked bad and the previous build comes back
+  ([`index.ts`](./src/main/index.ts), [`updater.ts`](./src/main/updater.ts)).
+- **Two agents cannot undo each other.** Updates come from `main`, so both agents' work is in them.
+  Releases take turns, and one that does not contain the live release is refused.
+
+A new terminal-host protocol (`HOST_PROTOCOL` in [`ptyProtocol.ts`](./src/main/ptyProtocol.ts))
+cannot be applied live, since it means replacing the host and the agents in it; the button offers
+**Restart to update** instead. A new runtime dependency needs `npm run install-stable`, as does the
+first update of an app installed before any of this existed.
 
 ### Testing on Linux from a Mac
 
@@ -184,8 +219,12 @@ the terminal and editor read as the brightest surfaces on screen.
 
 ```
 src/main/        Electron main — services and IPC
+  index.ts       boot loader: picks the installed build or a newer release, backs out a bad one
+  app.ts         the app itself — window, lifecycle, quit
+  updater.ts     switches the running app onto a newly published release
+  ptyHost.ts     the terminal host: owns every PTY, outlives the app, replays output on reattach
+  pty.ts         main's side of the host — spawn, reattach, relay to the window
   git.ts         worktrees, session-scoped status, integrate, land, gh PR/checks
-  pty.ts         node-pty manager, output batched across the IPC boundary
   sessions.ts    worktree lifecycle, local folders, setup scripts, claude launch, archive
   agentState.ts  Claude Code hooks → working / attention / done / API error
   codeServer.ts  one shared code-server, one folder per editor tab

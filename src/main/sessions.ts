@@ -866,6 +866,11 @@ export async function applyGeneratedTitle(sessionId: string): Promise<TitleAttem
  * Launches the agent. This is a real `claude` PTY, not a wrapper — every Claude Code feature
  * renders natively (PLAN.md §1, §4). The state-file env var is what the installed hooks write to.
  */
+/** Every session has one Claude tab, so its terminal is found by the session alone. */
+export function claudeSlot(sessionId: string): string {
+  return `${sessionId}:claude`
+}
+
 export function launchClaude(
   session: Session,
   cols: number,
@@ -923,6 +928,7 @@ export function launchClaude(
       'Reinstall the app after updating, or start it from a terminal with: npm run dev'
     return ptys.spawnScript(
       session.id,
+      claudeSlot(session.id),
       session.worktreePath,
       'Claude',
       `printf '%b\\n' "${message}"; exit 127`,
@@ -933,6 +939,7 @@ export function launchClaude(
 
   return ptys.spawn({
     sessionId: session.id,
+    slot: claudeSlot(session.id),
     kind: 'claude',
     label: 'Claude',
     cwd: session.worktreePath,
@@ -962,6 +969,7 @@ export function launchClaude(
  */
 export async function runSetupScript(
   session: Session,
+  slot: string,
   cols: number,
   rows: number,
   onSettled?: () => void
@@ -974,6 +982,7 @@ export async function runSetupScript(
   store.updateSession(session.id, { setupState: 'running' })
   return ptys.spawnScript(
     session.id,
+    slot,
     session.worktreePath,
     'setup',
     await setupCommand(script),

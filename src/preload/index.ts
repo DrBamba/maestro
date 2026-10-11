@@ -26,7 +26,8 @@ import type {
   RemoveRepoPlan,
   Repo,
   Session,
-  StartMode
+  StartMode,
+  UpdateStatus
 } from '@shared/types'
 import { platformOf } from '@shared/platform'
 import type { ThemeName } from '@shared/theme'
@@ -47,6 +48,17 @@ export interface Snapshot {
   preferences: Preferences
   theme: ThemeName
   appStartedAt: number
+  /** Tabs whose terminal outlived the last window, as `<sessionId>:<tab key>`. */
+  heldTerminals: string[]
+  /** What the last window stashed about itself, keyed by what it stashed it under. */
+  windowState: Record<string, unknown>
+}
+
+/** A terminal handed to a tab. `replay` and `exit` are set when it was already running before. */
+export interface PtyAttach {
+  id: string
+  replay?: string
+  exit?: { exitCode: number; tail: string }
 }
 
 export interface PtyDataEvent {
@@ -197,23 +209,23 @@ const api = {
       cols: number,
       rows: number,
       launch: ClaudeLaunch
-    ): Promise<{ id: string } | null> =>
-      ipcRenderer.invoke('pty:claude', sessionId, cols, rows, launch),
+    ): Promise<PtyAttach | null> => ipcRenderer.invoke('pty:claude', sessionId, cols, rows, launch),
     shell: (
       sessionId: string,
+      tab: string,
       label: string,
       cols: number,
       rows: number
-    ): Promise<{ id: string } | null> => ipcRenderer.invoke('pty:shell', sessionId, label, cols, rows),
-    setup: (sessionId: string, cols: number, rows: number): Promise<{ id: string } | null> =>
-      ipcRenderer.invoke('pty:setup', sessionId, cols, rows),
+    ): Promise<PtyAttach | null> => ipcRenderer.invoke('pty:shell', sessionId, tab, label, cols, rows),
+    setup: (sessionId: string, tab: string, cols: number, rows: number): Promise<PtyAttach | null> =>
+      ipcRenderer.invoke('pty:setup', sessionId, tab, cols, rows),
     script: (
       sessionId: string,
+      tab: string,
       scriptId: string,
       cols: number,
       rows: number
-    ): Promise<{ id: string } | null> =>
-      ipcRenderer.invoke('pty:script', sessionId, scriptId, cols, rows),
+    ): Promise<PtyAttach | null> => ipcRenderer.invoke('pty:script', sessionId, tab, scriptId, cols, rows),
     write: (id: string, data: string): void => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('pty:resize', id, cols, rows),
@@ -237,15 +249,33 @@ const api = {
       ipcRenderer.invoke('editor:openExternal', path, line)
   },
 
+  ui: {
+    /** Remembers something about this window for the next one; null forgets it. */
+    stash: (key: string, value: unknown): void => ipcRenderer.send('ui:stash', key, value),
+    /** A dialog is open. An update waits for it to close rather than reloading under it. */
+    busy: (busy: boolean): void => ipcRenderer.send('ui:busy', busy)
+  },
+
   app: {
     openPath: (path: string): Promise<{ ok: boolean; error: string }> =>
       ipcRenderer.invoke('app:openPath', path),
     revealPath: (path: string): Promise<boolean> => ipcRenderer.invoke('app:revealPath', path),
     /** Reports an uncaught renderer error to main, which logs it to crash.log. */
     reportError: (message: string): void => ipcRenderer.send('app:renderer-error', message)
+  },
+
+  update: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
+    onStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb),
+    /** Does whatever the button currently offers: build and apply, apply, or restart. */
+    press: (): void => ipcRenderer.send('update:press'),
+    openLog: (): void => ipcRenderer.send('update:log')
   }
 }
 
 export type MaestroApi = typeof api
+
+// Before the page runs, so it lands ahead of any request the page makes for a terminal.
+ipcRenderer.send('pty:window-loaded')
 
 contextBridge.exposeInMainWorld('maestro', api)

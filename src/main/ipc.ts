@@ -33,6 +33,7 @@ import { codeServer } from './codeServer'
 import { listConversations } from './claudeHistory'
 import { profile, sourceLabel, type Profile } from './profile'
 import { titleWatcher } from './autoTitle'
+import { updater } from './updater'
 import { createSetupScript, setupScriptIn, SETUP_SCRIPT_REL } from './setupScript'
 import {
   addRepo,
@@ -45,6 +46,7 @@ import {
   hasClaudeHistory,
   importableWorktrees,
   importWorktree,
+  claudeSlot,
   launchClaude,
   relocatePlan,
   relocateToWorktree,
@@ -87,6 +89,10 @@ export interface Snapshot {
    * Claude with --continue instead of starting a new conversation (PLAN.md §7 persistence).
    */
   appStartedAt: number
+  /** Tabs whose terminal outlived the last window, as `<sessionId>:<tab key>`. */
+  heldTerminals: string[]
+  /** What the last window stashed about itself, keyed by what it stashed it under. */
+  windowState: Record<string, unknown>
 }
 
 const APP_STARTED_AT = Date.now()
@@ -159,6 +165,7 @@ const unseen = new Set<string>()
  * looking untouched, and the completion it was reporting was simply lost.
  */
 export function restoreAgentStates(): void {
+  const live = new Set(ptys.liveClaudeSessions())
   for (const session of store.sessions) {
     if (session.archived) continue
 
@@ -171,6 +178,17 @@ export function restoreAgentStates(): void {
      * A graceful quit records the interruption on its way out; a crash does not, so a session still
      * marked as working is taken as interrupted too.
      */
+    /*
+     * Unless its Claude is in fact still running: main was replaced under a live terminal host, and
+     * the agent carried on. Its state file has moved on meanwhile, so read it again.
+     */
+    if (live.has(session.id)) {
+      if (session.agentState && session.agentState !== 'idle') agentStates.set(session.id, session.agentState)
+      if (session.unseen) unseen.add(session.id)
+      agentStates.refresh(session.id)
+      continue
+    }
+
     const inFlight = session.agentState === 'working' || session.agentState === 'delegating'
     const interrupted = inFlight || session.interruptedAt !== undefined
     if (interrupted && session.interruptedAt === undefined) {
@@ -291,6 +309,8 @@ function requireDirectory(sessionId: string): Session | null {
 
 export function registerIpc(): void {
   ipcMain.handle('state:snapshot', async (): Promise<Snapshot> => {
+    // The first thing a window that works does, which makes it the test of whether a release works.
+    updater.windowReady()
     return {
       repos: store.repos,
       sessions: store.sessions,
@@ -305,7 +325,9 @@ export function registerIpc(): void {
       sourceLabel: sourceLabel(),
       preferences: store.preferences,
       theme: resolvedTheme(),
-      appStartedAt: APP_STARTED_AT
+      appStartedAt: APP_STARTED_AT,
+      heldTerminals: ptys.heldSlots(),
+      windowState: await ptys.stashGet()
     }
   })
 
@@ -663,6 +685,10 @@ export function registerIpc(): void {
       const session = requireDirectory(sessionId)
       if (!session) return null
 
+      // Still running from before the window was replaced: that is the Claude this tab shows.
+      const held = await ptys.claim(claudeSlot(sessionId))
+      if (held) return held
+
       /*
        * Reset before anything is awaited, because this says "a process is starting now" and that is
        * true at the moment the launch is asked for, not whenever the filesystem work below happens
@@ -739,31 +765,46 @@ export function registerIpc(): void {
     return listConversations(session.worktreePath)
   })
 
-  ipcMain.handle('pty:shell', (_e, sessionId: string, label: string, cols: number, rows: number) => {
-    const session = requireDirectory(sessionId)
-    if (!session) return null
-    return ptys.spawnShell(sessionId, session.worktreePath, label, cols, rows)
-  })
+  /*
+   * Every terminal is asked for by the tab it fills, and each handler first looks for one the host
+   * is still holding for that tab — the window was reloaded, or main replaced, while it ran.
+   */
+  ipcMain.handle(
+    'pty:shell',
+    async (_e, sessionId: string, tab: string, label: string, cols: number, rows: number) => {
+      const session = requireDirectory(sessionId)
+      if (!session) return null
+      const slot = `${sessionId}:${tab}`
+      return (await ptys.claim(slot)) ?? ptys.spawnShell(sessionId, slot, session.worktreePath, label, cols, rows)
+    }
+  )
 
-  ipcMain.handle('pty:setup', async (_e, sessionId: string, cols: number, rows: number) => {
+  ipcMain.handle('pty:setup', async (_e, sessionId: string, tab: string, cols: number, rows: number) => {
     const ctx = requireSession(sessionId)
     if (!ctx) return null
+    const slot = `${sessionId}:${tab}`
+    const held = await ptys.claim(slot)
+    if (held) return held
     // Pushed twice, and both matter: once now for `running`, and again when the script exits — that
     // second push is what moves the footer off "setup running" and releases Claude's first turn.
-    const handle = await runSetupScript(ctx.session, cols, rows, pushSessions)
+    const handle = await runSetupScript(ctx.session, slot, cols, rows, pushSessions)
     pushSessions()
     return handle
   })
 
   ipcMain.handle(
     'pty:script',
-    (_e, sessionId: string, scriptId: string, cols: number, rows: number) => {
+    async (_e, sessionId: string, tab: string, scriptId: string, cols: number, rows: number) => {
       const ctx = requireSession(sessionId)
       if (!ctx) return null
+      const slot = `${sessionId}:${tab}`
+      const held = await ptys.claim(slot)
+      if (held) return held
       const script = ctx.repo.runScripts.find((s) => s.id === scriptId)
       if (!script) return null
       return ptys.spawnScript(
         sessionId,
+        slot,
         ctx.session.worktreePath,
         script.name,
         script.command,
@@ -793,6 +834,27 @@ export function registerIpc(): void {
   })
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => ptys.resize(id, cols, rows))
   ipcMain.on('pty:kill', (_e, id: string) => ptys.kill(id))
+
+  // Sent by the preload of every page load: a new page shows none of the terminals until it asks.
+  ipcMain.on('pty:window-loaded', () => ptys.releaseAll())
+
+  /*
+   * What a window needs to put itself back as it was — tabs, panes, which sessions were open. Kept
+   * by the terminal host beside the terminals themselves, so it lasts exactly as long as they do.
+   */
+  ipcMain.on('ui:stash', (_e, key: string, value: unknown) => ptys.stashSet(key, value))
+
+  /*
+   * A terminal that ended while no main process was running to see it. The two that matter are the
+   * ones spawned with a callback: Claude settles its dot, and setup records how it went.
+   */
+  ptys.onRecoveredExit((entry) => {
+    if (entry.kind === 'claude') agentStates.settle(entry.sessionId)
+    else if (entry.kind === 'script' && entry.label === 'setup' && store.session(entry.sessionId)) {
+      store.updateSession(entry.sessionId, { setupState: entry.exitCode === 0 ? 'ok' : 'failed' })
+      pushSessions()
+    }
+  })
 
   // ── editor ──────────────────────────────────────────────────────────────────
   ipcMain.handle(

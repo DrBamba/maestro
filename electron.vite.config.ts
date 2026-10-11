@@ -8,7 +8,17 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': shared } },
-    build: { rollupOptions: { input: { index: resolve('src/main/index.ts') } } }
+    build: {
+      rollupOptions: {
+        input: {
+          // The boot loader, which picks a build and imports its `app`.
+          index: resolve('src/main/index.ts'),
+          app: resolve('src/main/app.ts'),
+          // Its own process, started by main — see src/main/ptyHost.ts.
+          ptyHost: resolve('src/main/ptyHost.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

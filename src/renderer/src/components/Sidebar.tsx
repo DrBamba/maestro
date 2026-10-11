@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AgentState, AgentStatus, Repo, Session } from '@shared/types'
+import type { AgentState, AgentStatus, Repo, Session, UpdateStatus } from '@shared/types'
 import { isLocal } from '@shared/types'
 import { relativeTime } from '../lib/format'
 
@@ -424,6 +424,83 @@ interface SidebarProps {
   onDelete: (id: string) => void
   onRename: (id: string) => void
   onOpenSettings: () => void
+  update: UpdateStatus
+  onUpdate: () => void
+  onUpdateLog: () => void
+}
+
+const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
+  build: 'Building update…',
+  test: 'Testing update…',
+  publish: 'Installing update…'
+}
+
+/** Only there when there is something newer than what is running. Nothing updates until pressed. */
+function UpdateBar({
+  update,
+  onUpdate,
+  onUpdateLog
+}: {
+  update: UpdateStatus
+  onUpdate: () => void
+  onUpdateLog: () => void
+}): React.JSX.Element | null {
+  switch (update.state) {
+    case 'none':
+      return null
+    case 'available':
+    case 'ready':
+      return (
+        <div className="sidebar__update">
+          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
+            <i className="ph ph-arrow-circle-up" style={{ fontSize: 15 }} />
+            Update Maestro
+          </button>
+          {update.state === 'available' && (
+            <div className="sidebar__update-note">
+              {update.changes === 1 ? '1 change' : `${update.changes} changes`} on main
+            </div>
+          )}
+        </div>
+      )
+    case 'building':
+    case 'applying':
+      return (
+        <div className="sidebar__update">
+          <button className="btn btn--block" disabled>
+            <span className="spinner" />
+            {update.state === 'applying' ? 'Updating…' : BUILD_STEP[update.step]}
+          </button>
+          <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
+            <i className="ph ph-file-text" style={{ fontSize: 16 }} />
+          </button>
+        </div>
+      )
+    case 'failed':
+      return (
+        <div className="sidebar__update sidebar__update--failed">
+          <div className="sidebar__update-note">{update.message}</div>
+          <div className="sidebar__update-row">
+            <button className="btn btn--block btn--small" onClick={onUpdate}>
+              Retry update
+            </button>
+            <button className="btn btn--small" onClick={onUpdateLog}>
+              Log
+            </button>
+          </div>
+        </div>
+      )
+    case 'restart':
+      return (
+        <div className="sidebar__update">
+          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
+            <i className="ph ph-arrow-clockwise" style={{ fontSize: 15 }} />
+            Restart to update
+          </button>
+          <div className="sidebar__update-note">This update restarts Claude sessions</div>
+        </div>
+      )
+  }
 }
 
 export default function Sidebar({
@@ -448,7 +525,10 @@ export default function Sidebar({
   onArchive,
   onDelete,
   onRename,
-  onOpenSettings
+  onOpenSettings,
+  update,
+  onUpdate,
+  onUpdateLog
 }: SidebarProps): React.JSX.Element {
   const unseenSet = new Set(unseen)
   const rowProps = {
@@ -584,6 +664,8 @@ export default function Sidebar({
           )
         })}
       </div>
+
+      <UpdateBar update={update} onUpdate={onUpdate} onUpdateLog={onUpdateLog} />
 
       <div className="sidebar__foot">
         {/* Sessions are created from a repo's own +, or Cmd+N — this slot adds repos. */}

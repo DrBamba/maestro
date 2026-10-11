@@ -11,10 +11,11 @@ import type {
   Preferences,
   Repo,
   Session,
-  StartMode
+  StartMode,
+  UpdateStatus
 } from '@shared/types'
 import Sidebar, { sidebarOrder } from './components/Sidebar'
-import SessionView from './components/SessionView'
+import SessionView, { sessionStashKey, type SessionWindowState } from './components/SessionView'
 import CommandPalette, { type Command } from './components/CommandPalette'
 import NewSessionDialog from './components/NewSessionDialog'
 import LocalSessionDialog from './components/LocalSessionDialog'
@@ -60,6 +61,11 @@ function digitHint(order: Session[], id: string): string | undefined {
   return undefined
 }
 
+/** Where the window keeps which sessions it had open. */
+const OPENED_KEY = 'app:opened'
+/** Set by main just before an update replaces the window, to the release's commit subject. */
+const UPDATED_KEY = 'app:updated'
+
 export default function App(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
@@ -88,6 +94,13 @@ export default function App(): React.JSX.Element {
   const [toast, setToast] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const [openedIds, setOpenedIds] = useState<string[]>([])
+  /*
+   * What the previous window left: terminals still running for its tabs, and how it was arranged.
+   * Refs, not state — read once, as each session's view mounts.
+   */
+  const heldTerminals = useRef<ReadonlySet<string>>(new Set())
+  const windowState = useRef<Record<string, unknown>>({})
+  const restoredWindow = useRef(false)
   const [localCollapsed, setLocalCollapsed] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, GitStatus | null>>({})
   const [remote, setRemote] = useState<string | null>(null)
@@ -123,13 +136,37 @@ export default function App(): React.JSX.Element {
       setAppStartedAt(snapshot.appStartedAt)
       setHome(snapshot.home)
       setLocalRoot(snapshot.localRoot)
-      const first = snapshot.activeSessionId ?? snapshot.sessions.find((s) => !s.archived)?.id ?? null
-      if (first) {
-        setActiveId(first)
-        setOpenedIds([first])
+      heldTerminals.current = new Set(snapshot.heldTerminals)
+      windowState.current = snapshot.windowState
+      restoredWindow.current = true
+      const updated = snapshot.windowState[UPDATED_KEY]
+      if (typeof updated === 'string') {
+        notice(`Maestro updated: ${updated}`)
+        window.maestro.ui.stash(UPDATED_KEY, null)
       }
+      const first = snapshot.activeSessionId ?? snapshot.sessions.find((s) => !s.archived)?.id ?? null
+      // Every session the last window had open comes back open, so its terminals are shown again.
+      const known = new Set(snapshot.sessions.filter((s) => !s.archived).map((s) => s.id))
+      const reopened = (Array.isArray(snapshot.windowState[OPENED_KEY]) ? snapshot.windowState[OPENED_KEY] : [])
+        .filter((id: unknown): id is string => typeof id === 'string' && known.has(id))
+      if (first) setActiveId(first)
+      const opened = [...new Set([...(first ? [first] : []), ...reopened])]
+      if (opened.length) setOpenedIds(opened)
     })
   }, [])
+
+  useEffect(() => window.maestro.ui.busy(overlay !== null), [overlay])
+
+  const [update, setUpdate] = useState<UpdateStatus>({ state: 'none' })
+  useEffect(() => {
+    void window.maestro.update.status().then(setUpdate)
+    return window.maestro.update.onStatus(setUpdate)
+  }, [])
+
+  // Not until the last window's list has been read, or the empty one this starts with replaces it.
+  useEffect(() => {
+    if (restoredWindow.current) window.maestro.ui.stash(OPENED_KEY, openedIds)
+  }, [openedIds])
 
   useEffect(() => window.maestro.onSessions(setSessions), [])
   useEffect(() => window.maestro.agent.onUnseen(setUnseen), [])
@@ -783,6 +820,9 @@ export default function App(): React.JSX.Element {
         onDelete={(id) => openDispose(id, 'delete')}
         onRename={openRename}
         onOpenSettings={() => setOverlay('settings')}
+        update={update}
+        onUpdate={() => window.maestro.update.press()}
+        onUpdateLog={() => window.maestro.update.openLog()}
       />
 
       {openSessions.map((session) => {
@@ -813,6 +853,8 @@ export default function App(): React.JSX.Element {
             theme={theme}
             onPreferences={(patch) => void updatePreferences(patch)}
             onNotice={notice}
+            heldTerminals={heldTerminals.current}
+            restored={windowState.current[sessionStashKey(session.id)] as SessionWindowState | undefined}
             onClaudePty={(sessionId, ptyId) => {
               claudePtys.current[sessionId] = ptyId
             }}
