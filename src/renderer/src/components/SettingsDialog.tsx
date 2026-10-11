@@ -28,6 +28,7 @@ export default function SettingsDialog({
   const auto = preferences.permissionMode === 'auto'
   const theme = preferences.theme ?? 'dark'
   const chime = preferences.chime === true
+  const remote = preferences.remoteUpdates === true
 
   return (
     <Modal onClose={onClose} width={460} label="Settings">
@@ -110,6 +111,32 @@ export default function SettingsDialog({
         {chime
           ? 'Only the states that want you — a session getting on with its work stays quiet.'
           : 'Off. Sessions still change colour in the sidebar; they just do it silently.'}
+      </div>
+
+      <div className="field">
+        <label>Updates</label>
+        <button
+          className="checkbox"
+          aria-label="Fetch updates from the remote"
+          onClick={() => onChange({ remoteUpdates: remote ? undefined : true })}
+        >
+          <span className={`checkbox__box${remote ? ' is-on' : ''}`}>
+            {remote && <i className="ph ph-check" />}
+          </span>
+          <span className="checkbox__label">
+            Fetch Maestro’s own repository every five minutes
+          </span>
+        </button>
+      </div>
+
+      {/*
+       * Worth saying because it moves a branch in a repository the user owns — a fast-forward, the
+       * same one `git pull` would do, and only from a clean `main`.
+       */}
+      <div className="modal__note">
+        {remote
+          ? 'Fast-forwards main when the remote is ahead, so updates there are offered here.'
+          : 'Off: updates are offered when main moves on this machine.'}
       </div>
 
       <div className="modal__actions">

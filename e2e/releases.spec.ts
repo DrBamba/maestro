@@ -15,7 +15,9 @@ test.use({
     MAESTRO_RELEASES: '1',
     MAESTRO_WINDOW_DEADLINE_MS: '4000',
     MAESTRO_NO_RELAUNCH: '1',
-    MAESTRO_UPDATE_POLL_MS: '500'
+    // Deliberately slower than the tests wait: what notices `main` moving is the watch on its ref.
+    MAESTRO_UPDATE_POLL_MS: '120000',
+    MAESTRO_UPDATE_FETCH_MS: '2000'
   }
 })
 
@@ -229,12 +231,14 @@ async function scratchRepo(profileDir: string): Promise<{ repo: string; commit: 
   const git = (...args: string[]): string =>
     execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
   git('init', '-q', '-b', 'main')
-  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'scripts')
+  git('config', 'user.email', 't@t')
+  git('config', 'user.name', 't')
+  git('add', 'scripts')
   const commit = (msg: string): string => {
-    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', msg)
+    git('commit', '-q', '--allow-empty', '-m', msg)
     return git('rev-parse', 'HEAD')
   }
-  return { repo, commit }
+  return { repo, git, commit }
 }
 
 async function hasBuilt(window: Page): Promise<boolean> {
@@ -309,4 +313,39 @@ test('an update finishing while a dialog is open waits for it to close', async (
 
   await window.keyboard.press('Escape')
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 20_000 }).toBe(true)
+})
+
+test('with the setting on, a commit pushed to the remote is offered here', async ({
+  window,
+  profileDir
+}) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+
+  // A remote, and somewhere else that pushes to it.
+  const origin = join(profileDir, 'origin.git')
+  execFileSync('git', ['init', '-q', '--bare', origin])
+  scratch.git('remote', 'add', 'origin', origin)
+  scratch.git('push', '-q', 'origin', 'main')
+
+  const elsewhere = join(profileDir, 'elsewhere')
+  const there = (...args: string[]): string =>
+    execFileSync('git', ['-C', elsewhere, ...args], { encoding: 'utf8' }).trim()
+  execFileSync('git', ['clone', '-q', origin, elsewhere])
+  there('config', 'user.email', 't@t')
+  there('config', 'user.name', 't')
+  there('commit', '-q', '--allow-empty', '-m', 'landed on the remote')
+  there('push', '-q', 'origin', 'main')
+
+  // Nothing here knows about it yet.
+  await window.waitForTimeout(3000)
+  await expect(window.locator('.sidebar__update')).toHaveCount(0)
+
+  await window.click('[aria-label="Settings"]')
+  await window.click('[aria-label="Fetch updates from the remote"]')
+  await window.keyboard.press('Escape')
+
+  await expect(updateButton(window)).toBeVisible({ timeout: 30_000 })
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  // Fast-forwarded rather than left behind, so the build and the repo agree on what main is.
+  expect(scratch.git('rev-parse', 'main')).toBe(there('rev-parse', 'HEAD'))
 })

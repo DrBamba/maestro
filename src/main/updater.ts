@@ -9,13 +9,21 @@ import { HOST_PROTOCOL } from './ptyProtocol'
 import { ptys } from './pty'
 import { Releases, readStamp, releasesDir, type ReleaseStamp } from './releases'
 import { resolveBinary } from './shellEnv'
+import { store } from './store'
+import { landOnBase } from './git'
 
 const exec = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
 
 /** How long a new window gets to ask for its first snapshot before the release is called broken. */
 const WINDOW_DEADLINE_MS = Number(process.env.MAESTRO_WINDOW_DEADLINE_MS) || 30_000
-const POLL_MS = Number(process.env.MAESTRO_UPDATE_POLL_MS) || 10_000
+/**
+ * The fallback rhythm. `main` moving writes a file this watches, so this is only for the cases a
+ * watch misses — a packed ref, a filesystem that does not report, a release published elsewhere.
+ */
+const POLL_MS = Number(process.env.MAESTRO_UPDATE_POLL_MS) || 60_000
+/** How often the repository is fetched, when the setting asks for it. */
+const FETCH_MS = Number(process.env.MAESTRO_UPDATE_FETCH_MS) || 5 * 60_000
 
 /** Where the next window finds the note that it is an update. */
 export const UPDATED_KEY = 'app:updated'
@@ -57,7 +65,13 @@ class Updater {
   private refreshing = false
   private again = false
   private watcher: FSWatcher | null = null
+  private refWatchers: FSWatcher[] = []
+  /** The repository the ref watches are on, so they follow a build that came from another. */
+  private watchedRepo = ''
   private poll: NodeJS.Timeout | null = null
+  private fetchTimer: NodeJS.Timeout | null = null
+  private fetching = false
+  private nudge: NodeJS.Timeout | null = null
   private deadline: NodeJS.Timeout | null = null
   private options: UpdaterOptions | null = null
 
@@ -84,6 +98,10 @@ class Updater {
     }
     this.poll = setInterval(() => void this.refresh(), POLL_MS)
     this.poll.unref()
+    this.watchBranch()
+    this.fetchTimer = setInterval(() => void this.fetchRemote(), FETCH_MS)
+    this.fetchTimer.unref()
+    void this.fetchRemote()
     void this.refresh()
   }
 
@@ -99,8 +117,69 @@ class Updater {
 
   stop(): void {
     this.watcher?.close()
+    for (const watcher of this.refWatchers) watcher.close()
     if (this.poll) clearInterval(this.poll)
+    if (this.fetchTimer) clearInterval(this.fetchTimer)
+    if (this.nudge) clearTimeout(this.nudge)
     this.child?.kill()
+  }
+
+  /**
+   * Watches the file git writes when `main` moves, so a merge is noticed at once rather than at the
+   * next poll — and so the poll can be slow enough to cost nothing.
+   */
+  private watchBranch(): void {
+    const repo = this.live()?.repo ?? ''
+    if (repo === this.watchedRepo) return
+    this.watchedRepo = repo
+    for (const watcher of this.refWatchers.splice(0)) watcher.close()
+    const gitDir = join(repo, '.git')
+    if (!existsSync(gitDir)) return
+    const soon = (): void => {
+      // Several writes land per ref update, and a fetch touches these files repeatedly.
+      if (this.nudge) clearTimeout(this.nudge)
+      this.nudge = setTimeout(() => void this.refresh(), 400)
+    }
+    for (const [dir, name] of [
+      [join(gitDir, 'refs', 'heads'), 'main'],
+      // Housekeeping can fold the loose ref into this one file instead.
+      [gitDir, 'packed-refs']
+    ]) {
+      try {
+        this.refWatchers.push(watch(dir, (_event, file) => file === name && soon()))
+      } catch {
+        // No watch here; the poll still covers it.
+      }
+    }
+  }
+
+  /** The setting was just switched on. */
+  checkRemote(): void {
+    void this.fetchRemote()
+  }
+
+  /**
+   * Brings the repository's `main` up to date with the remote, when the setting asks for it.
+   *
+   * A fast-forward only, and only from a clean worktree — exactly what a `git pull` on an untouched
+   * `main` would do. A `main` that has moved locally is left alone; its own commits are already
+   * ahead of the remote's.
+   */
+  private async fetchRemote(): Promise<void> {
+    const repo = this.live()?.repo
+    if (!repo || !store.preferences.remoteUpdates || this.fetching || this.child) return
+    this.fetching = true
+    try {
+      await exec('git', ['-C', repo, 'fetch', '--quiet', 'origin', 'main'], { timeout: 120_000 })
+      await landOnBase(repo, 'main', 'origin/main')
+      await this.refresh()
+    } catch (err) {
+      // No remote, no network, nothing to fast-forward: all normal, and all the button can say is
+      // that there is no update.
+      console.log(`[maestro] fetch for updates: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      this.fetching = false
+    }
   }
 
   private logFile(): string {
@@ -156,6 +235,8 @@ class Updater {
     }
     this.refreshing = true
     try {
+      // An update can bring a build from a different checkout; the watches follow it.
+      this.watchBranch()
       const ready = this.ready()
       if (ready && this.wanted) return this.apply(ready)
       this.wanted = false

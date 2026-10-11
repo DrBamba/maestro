@@ -357,6 +357,8 @@ export function registerIpc(): void {
       // whatever the repaint costs — and so the editor's settings are written before the renderer
       // is told to go and read them.
       if ('theme' in patch) await applyTheme()
+      // Asked for now, not in five minutes: switching it on is how the user asks for a check.
+      if (patch.remoteUpdates) updater.checkRemote()
       return preferences
     }
   )

@@ -457,6 +457,12 @@ export interface Preferences {
    * noise nobody opted into is one the user has to go find the setting for.
    */
   chime?: boolean
+  /**
+   * Whether Maestro fetches its own repository while it runs, so an update that landed on the
+   * remote is offered without anyone pulling first. Off unless asked for: it talks to the network
+   * on a timer, and a repository whose `main` only moves locally gains nothing from it.
+   */
+  remoteUpdates?: boolean
 }
 
 /**

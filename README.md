@@ -136,6 +136,12 @@ being closed — and without running anything unfinished.
   the app. Running agents carry on either way. If a dialog is open when the build finishes, the
   switch waits for it to close.
 
+The button appears a moment after `main` moves: Maestro watches the file git writes for that ref,
+and re-checks every minute in case a watch misses one. `main` moving locally — an agent merging, a
+`git pull` — is what it reads. Settings adds the remote to that: with **Fetch Maestro's own
+repository every five minutes** on, it fetches `origin` and fast-forwards a clean `main`, so an
+update that landed there is offered here too.
+
 Nothing is applied until the button is pressed. A failed build says whether it failed to build or
 failed its tests, and offers the log and a retry. `npm run release` is the same pipeline from a
 terminal (`--quick` runs only the live-update tests); what it publishes also waits for the button.
