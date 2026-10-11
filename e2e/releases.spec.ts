@@ -308,7 +308,7 @@ test('with tests skipped in settings, the button only builds main', async ({ win
   await window.keyboard.press('Escape')
 
   await updateButton(window).click()
-  await expect(window.locator('.sidebar__update')).toContainText('Building update…', { timeout: 10_000 })
+  await expect(window.locator('.sidebar__update')).toContainText('Building…', { timeout: 10_000 })
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
 })
 
