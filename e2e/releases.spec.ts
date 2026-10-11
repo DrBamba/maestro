@@ -202,9 +202,10 @@ const releases = join(process.env.MAESTRO_USER_DATA_DIR, 'releases')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 console.log('$ npm run typecheck')
 await sleep(800)
-console.log('$ npx playwright test')
+const testing = !process.argv.includes('--no-tests')
+if (testing) console.log('$ npx playwright test')
 await sleep(1500)
-if (readFileSync('stub-mode', 'utf8').trim() === 'fail') {
+if (testing && readFileSync('stub-mode', 'utf8').trim() === 'fail') {
   console.error('\\nrelease: npx playwright test failed')
   process.exit(1)
 }
@@ -293,6 +294,21 @@ test('a build that fails its tests says so and can be retried', async ({ window,
 
   await writeFile(join(scratch.repo, 'stub-mode'), 'pass')
   await bar.locator('.btn:has-text("Retry update")').click()
+  await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
+})
+
+test('with tests skipped in settings, the button only builds main', async ({ window, profileDir }) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+  // Would fail if tested: skipping them is what lets it through.
+  await writeFile(join(scratch.repo, 'stub-mode'), 'fail')
+  scratch.commit('trusted main')
+
+  await window.click('[aria-label="Settings"]')
+  await window.click('[aria-label="Skip tests when updating"]')
+  await window.keyboard.press('Escape')
+
+  await updateButton(window).click()
+  await expect(window.locator('.sidebar__update')).toContainText('Building update…', { timeout: 10_000 })
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
 })
 

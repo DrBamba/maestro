@@ -41,7 +41,8 @@ interface UpdaterOptions {
  *
  * It watches two things: `main` in the repository the running build came from, and releases
  * published to this profile (by an earlier press, or by `npm run release`). Nothing is applied until
- * the button is pressed. Pressing builds and tests `main` if that is what is new — the same
+ * the button is pressed. Pressing builds and tests `main` if that is what is new (tests unless the
+ * setting skips them) — the same
  * `scripts/release.mjs` a terminal would run — then switches over.
  *
  * Switching is a window reload when main and preload are byte-identical to the running ones, and a
@@ -296,7 +297,9 @@ class Updater {
     this.wanted = true
     this.setStatus({ state: 'building', step: 'build' })
     const log = createWriteStream(this.logFile())
-    const child = spawn(node, [script, '--ref', 'main'], {
+    const args = [script, '--ref', 'main']
+    if (store.preferences.skipUpdateTests) args.push('--no-tests')
+    const child = spawn(node, args, {
       cwd: repo,
       env: { ...process.env, MAESTRO_USER_DATA_DIR: app.getPath('userData') }
     })
