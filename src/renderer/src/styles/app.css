@@ -246,6 +246,12 @@ select {
   color: var(--color-neutral-300);
 }
 
+/* Local is not a repo and never moves, so a rule keeps it apart from the list that does. */
+.repo-group--local {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
 /* A repo being dragged stays in place, dimmed; a line marks where it would land. */
 .repo-group.is-lifted {
   opacity: 0.35;
