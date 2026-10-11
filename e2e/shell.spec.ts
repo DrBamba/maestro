@@ -868,6 +868,100 @@ test('a restored session picks up its conversation, not a new one', async ({
   await expect.poll(agentLog, { timeout: 30_000 }).toContain('ARGS: --continue')
 })
 
+/** {@link createSession} for a test making several: each lands after the last, not first. */
+async function openSession(window: Page, name: string): Promise<void> {
+  await window.click('[aria-label="New session in demo-api"]')
+  await window.fill('#session-name', name)
+  await window.click('.modal__actions .btn--primary')
+  await expect(window.locator('.session-row__name', { hasText: name })).toHaveCount(1, {
+    timeout: 30_000
+  })
+}
+
+test('sessions picked together are deleted together', async ({ window }) => {
+  for (const name of ['bulk one', 'bulk two', 'bulk three']) await openSession(window, name)
+  const subjects = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) =>
+      s.sessions
+        .filter((x) => x.name.startsWith('bulk '))
+        .map((x) => ({ path: x.worktreePath, branch: x.branch }))
+    )
+  )
+  expect(subjects).toHaveLength(3)
+
+  const row = (name: string) => window.locator('.session-row', { hasText: name })
+  const picked = window.locator('.session-row.is-selected')
+
+  // The open session counts as picked, so a shift-click spans from it.
+  await row('bulk three').click()
+  await row('bulk one').click({ modifiers: ['Shift'] })
+  await expect(picked).toHaveCount(3)
+  await row('bulk two').click({ modifiers: ['ControlOrMeta'] })
+  await expect(picked).toHaveCount(2)
+  await row('bulk two').click({ modifiers: ['ControlOrMeta'] })
+  await expect(window.locator('.sidebar__selection')).toContainText('3 selected')
+
+  // A plain click is just opening a session again.
+  await row('bulk two').click()
+  await expect(picked).toHaveCount(0)
+  await row('bulk one').click({ modifiers: ['Shift'] })
+  await row('bulk three').click({ modifiers: ['ControlOrMeta'] })
+  await expect(picked).toHaveCount(3)
+
+  await window.click('[aria-label="Delete selected"]')
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await expect(dialog.locator('.outcome')).toContainText('3 removed')
+  await dialog.locator('.checkbox:has-text("Also delete their 3 branches")').click()
+  await expect(dialog.locator('.outcome')).toContainText('3 deleted')
+  const discard = dialog.locator('.seg__opt:has-text("Discard them")')
+  if (await discard.count()) await discard.click()
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+  await expect(window.locator('.session-row', { hasText: 'bulk ' })).toHaveCount(0)
+  await expect(window.locator('.sidebar__selection')).toHaveCount(0)
+  for (const { path } of subjects) expect(existsSync(path)).toBe(false)
+  const repoPath = await window.evaluate(() =>
+    window.maestro.snapshot().then((s) => s.repos.find((r) => r.name === 'demo-api')!.path)
+  )
+  const { stdout } = await exec('git', ['-C', repoPath, 'branch', '--list'])
+  for (const { branch } of subjects) expect(stdout).not.toContain(branch)
+})
+
+test('archived rows join a selection, and are only offered delete', async ({ window }) => {
+  for (const name of ['shelved one', 'shelved two']) {
+    await openSession(window, name)
+    const row = window.locator('.session-row', { hasText: name })
+    await row.hover()
+    await row.locator(`[aria-label="Archive ${name}"]`).click()
+    await confirmDispose(window)
+    await expect(window.locator('.modal')).toHaveCount(0, { timeout: 30_000 })
+  }
+
+  await window.locator('.archived-toggle').click()
+  const archived = window.locator('.session-row.is-archived')
+  await archived.nth(0).click({ modifiers: ['ControlOrMeta'] })
+  await archived.nth(1).click({ modifiers: ['ControlOrMeta'] })
+  await expect(window.locator('.session-row.is-selected')).toHaveCount(2)
+  await expect(window.locator('[aria-label="Archive selected"]')).toBeDisabled()
+
+  // Escape lets go; the rows stay where they are.
+  await window.keyboard.press('Escape')
+  await expect(window.locator('.session-row.is-selected')).toHaveCount(0)
+  await archived.nth(0).click({ modifiers: ['ControlOrMeta'] })
+  await archived.nth(1).click({ modifiers: ['ControlOrMeta'] })
+
+  await window.click('[aria-label="Delete selected"]')
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.modal__title')).toHaveText('Delete 2 archived sessions?')
+  await expect(dialog.locator('.seg--lg')).toHaveCount(0)
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await dialog.locator('.modal__actions .btn--primary').click()
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+  await expect(window.locator('.archived-toggle')).toHaveCount(0)
+})
+
 test('an archived session can be deleted, branch and all', async ({ window }) => {
   await createSession(window, 'archived leftovers')
 
@@ -1156,4 +1250,46 @@ test('About says which Maestro this is and where it keeps things', async ({ wind
 
   await dialog.locator('.modal__actions .btn').click()
   await expect(window.locator('.modal')).toHaveCount(0)
+})
+
+test('picked local sessions can take their folders, shared ones only all together', async ({
+  window,
+  profileDir
+}) => {
+  const shared = join(profileDir, 'shared')
+  const solo = join(profileDir, 'solo')
+  await openSharedFolder(window, shared)
+  await mkdir(solo, { recursive: true })
+  await window.click('[aria-label="New local session"]')
+  await window.click('.seg__opt:has-text("One I already have")')
+  await window.fill('#local-path', solo)
+  await window.fill('#local-name', 'solo')
+  await window.click('.modal__actions .btn--primary')
+  await expect(window.locator('.modal')).toHaveCount(0, { timeout: 30_000 })
+
+  const row = (name: string) => window.locator('.repo-group--local .session-row', { hasText: name })
+  const dialog = window.locator('.modal')
+
+  // One of the two sharers is not enough to take their folder.
+  await row('first').click()
+  await row('solo').click({ modifiers: ['ControlOrMeta'] })
+  await window.click('[aria-label="Delete selected"]')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await expect(dialog).toContainText('select every session in it first')
+  await expect(dialog.locator('.checkbox:has-text("Also delete the folder")')).toHaveCount(1)
+  await dialog.locator('.btn--ghost').click()
+
+  await row('second').click({ modifiers: ['ControlOrMeta'] })
+  await window.click('[aria-label="Delete selected"]')
+  await expect(dialog.locator('.launcher__empty')).toHaveCount(0, { timeout: 30_000 })
+  await expect(dialog).not.toContainText('select every session')
+  await expect(dialog.locator('.outcome')).toContainText('kept — local folders')
+  await dialog.locator('.checkbox:has-text("Also delete 2 folders")').click()
+  await expect(dialog.locator('.outcome')).toContainText('2 deleted')
+  await dialog.locator('.modal__actions .btn--primary').click()
+
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+  await expect(window.locator('.repo-group--local .session-row')).toHaveCount(0)
+  expect(existsSync(shared)).toBe(false)
+  expect(existsSync(solo)).toBe(false)
 })

@@ -297,6 +297,16 @@ select {
   box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
+/* Picked for a bulk action: tinted, so it never reads as the one being looked at. */
+.session-row.is-selected,
+.session-row.is-selected:hover {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.session-row.is-selected .session-row__name {
+  color: var(--color-text);
+}
+
 .session-row__name {
   flex: 1;
   font-size: 14px;
@@ -650,6 +660,29 @@ select {
   white-space: nowrap;
 }
 
+/* Above the footer while any rows are picked: what can be done to all of them at once. */
+.sidebar__selection {
+  padding: 10px 18px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar__selection-count {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
+.sidebar__selection .icon-btn-bare:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sidebar__selection .icon-btn-bare.is-danger:hover {
+  color: var(--status-del);
+}
+
 /* Above the footer, one row, only while there is an update to speak of. */
 .sidebar__update {
   padding: 10px 18px 0;
@@ -671,6 +704,29 @@ select {
 
 .sidebar__update-note.is-bad {
   color: var(--dot-error);
+}
+
+/* Above the footer while any rows are picked: what can be done to all of them at once. */
+.sidebar__selection {
+  padding: 10px 18px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar__selection-count {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
+.sidebar__selection .icon-btn-bare:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sidebar__selection .icon-btn-bare.is-danger:hover {
+  color: var(--status-del);
 }
 
 /* Above the footer, one row, only while there is an update to speak of. */

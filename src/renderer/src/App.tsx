@@ -15,7 +15,7 @@ import type {
   StartMode,
   UpdateStatus
 } from '@shared/types'
-import Sidebar, { sidebarOrder } from './components/Sidebar'
+import Sidebar, { sidebarOrder, type PickMode } from './components/Sidebar'
 import SessionView, {
   sessionStashKey,
   type SessionArrangement,
@@ -28,6 +28,7 @@ import MergeDialog from './components/MergeDialog'
 import PrDialog from './components/PrDialog'
 import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
+import BulkDisposeDialog from './components/BulkDisposeDialog'
 import RenameDialog from './components/RenameDialog'
 import RemoveRepoDialog from './components/RemoveRepoDialog'
 import DeleteFolderDialog from './components/DeleteFolderDialog'
@@ -49,6 +50,7 @@ type Overlay =
   | 'merge'
   | 'pr'
   | 'dispose'
+  | 'bulkDispose'
   | 'rename'
   | 'removeRepo'
   | 'deleteFolder'
@@ -98,6 +100,10 @@ export default function App(): React.JSX.Element {
   const [disposeAction, setDisposeAction] = useState<DisposeAction>('archive')
   /** Which session the dispose dialog is about — not always the active one. */
   const [disposeTarget, setDisposeTarget] = useState<string | null>(null)
+  /** Rows picked in the sidebar for a bulk archive or delete. */
+  const [picked, setPicked] = useState<string[]>([])
+  /** Where a shift-click range starts: the row picked last. */
+  const pickAnchor = useRef<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
   const [removeRepoTarget, setRemoveRepoTarget] = useState<string | null>(null)
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null)
@@ -428,6 +434,54 @@ export default function App(): React.JSX.Element {
     [renameTarget, notice]
   )
 
+  // A session that went away elsewhere drops out of the selection with it.
+  const selected = useMemo(
+    () => picked.filter((id) => sessions.some((s) => s.id === id)),
+    [picked, sessions]
+  )
+
+  const clearSelection = useCallback(() => {
+    setPicked([])
+    pickAnchor.current = null
+  }, [])
+
+  const openBulkDispose = useCallback((action: DisposeAction) => {
+    setDisposeAction(action)
+    setOverlay('bulkDispose')
+  }, [])
+
+  const runBulkDispose = useCallback(
+    async (jobs: { id: string; options: DisposeOptions }[], action: DisposeAction) => {
+      const done = new Set<string>()
+      const failed: string[] = []
+      // One at a time: sessions of one repo share its git lock.
+      for (const job of jobs) {
+        const result = await window.maestro.sessions.dispose(job.id, job.options)
+        if (result.ok) done.add(job.id)
+        else {
+          const name = sessions.find((s) => s.id === job.id)?.name ?? job.id
+          failed.push(`“${name}”: ${result.error ?? 'failed'}`)
+        }
+      }
+      setOpenedIds((ids) => ids.filter((id) => !done.has(id)))
+      setActiveId((current) => (current && done.has(current) ? null : current))
+      setPicked((ids) => ids.filter((id) => !done.has(id)))
+      if (done.size > 0) {
+        const count = done.size === 1 ? '1 session' : `${done.size} sessions`
+        notice(action === 'archive' ? `Archived ${count}` : `Deleted ${count}`)
+      }
+      if (failed.length === 0) {
+        clearSelection()
+        return { ok: true }
+      }
+      return {
+        ok: false,
+        error: `${failed.length} of ${jobs.length} failed. ${failed.join(' ')}`
+      }
+    },
+    [sessions, notice, clearSelection]
+  )
+
   const openDispose = useCallback((sessionId: string, action: DisposeAction) => {
     setDisposeTarget(sessionId)
     setDisposeAction(action)
@@ -559,6 +613,41 @@ export default function App(): React.JSX.Element {
     () => sidebarOrder(repos, sessions, localCollapsed),
     [repos, sessions, localCollapsed]
   )
+
+  /**
+   * ⌘-click and shift-click, as in a file list. The open session counts as already picked, so
+   * clicking one row and ⌘-clicking another takes both.
+   */
+  const pickSession = useCallback(
+    (id: string, mode: PickMode) => {
+      const order = navOrder.map((s) => s.id)
+      const seeded =
+        selected.length === 0 && activeId && activeId !== id && order.includes(activeId)
+          ? [activeId]
+          : selected
+      const anchor = pickAnchor.current ?? (seeded.length ? seeded[seeded.length - 1] : null)
+      const from = anchor ? order.indexOf(anchor) : -1
+      const to = order.indexOf(id)
+      if (mode === 'range' && from >= 0 && to >= 0) {
+        const span = order.slice(Math.min(from, to), Math.max(from, to) + 1)
+        setPicked([...seeded.filter((x) => !span.includes(x)), ...span])
+      } else {
+        setPicked(seeded.includes(id) ? seeded.filter((x) => x !== id) : [...seeded, id])
+      }
+      pickAnchor.current = id
+    },
+    [navOrder, selected, activeId]
+  )
+
+  // Escape lets go of a selection, as long as no dialog is the thing being dismissed.
+  useEffect(() => {
+    if (selected.length === 0 || overlay !== null) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') clearSelection()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [selected.length, overlay, clearSelection])
 
   /**
    * The next session with something for the user: one asking a question first, then one that
@@ -854,7 +943,14 @@ export default function App(): React.JSX.Element {
         sourceLabel={sourceLabel}
         activeId={activeId}
         now={now}
-        onSelect={selectSession}
+        selected={selected}
+        onSelect={(id) => {
+          clearSelection()
+          selectSession(id)
+        }}
+        onPick={pickSession}
+        onBulk={openBulkDispose}
+        onClearSelection={clearSelection}
         onNewSession={(repoId) => {
           setNewRepoId(repoId ?? activeRepo?.id ?? null)
           setOverlay('new')
@@ -1002,6 +1098,25 @@ export default function App(): React.JSX.Element {
           initialAction={disposeAction}
           onClose={() => setOverlay(null)}
           onDispose={runDispose}
+        />
+      )}
+
+      {overlay === 'bulkDispose' && selected.length > 0 && (
+        <BulkDisposeDialog
+          sessions={selected.map((id) => ({
+            id,
+            name: sessions.find((s) => s.id === id)?.name ?? id
+          }))}
+          home={home}
+          initialAction={disposeAction}
+          busyCount={
+            selected.filter((id) => {
+              const state = agentStates[id]?.state
+              return state === 'working' || state === 'delegating'
+            }).length
+          }
+          onClose={() => setOverlay(null)}
+          onDispose={runBulkDispose}
         />
       )}
 

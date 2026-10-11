@@ -9,6 +9,7 @@ import type {
 } from '@shared/types'
 import { isLocal } from '@shared/types'
 import { relativeTime } from '../lib/format'
+import { mac } from '../lib/shortcuts'
 import { SyncMark, isLanded } from './Landing'
 
 /*
@@ -194,14 +195,26 @@ interface GroupBodyProps {
   syncs: Record<string, BranchSync>
   unseenSet: Set<string>
   activeId: string | null
+  selectedSet: Set<string>
   now: number
   onSelect: (id: string) => void
+  onPick: (id: string, mode: PickMode) => void
   onRestore: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
   onRename: (id: string) => void
   /** Deletes every session sharing a folder — only where sessions are grouped by folder. */
   onDeleteFolder?: (path: string) => void
+}
+
+/** ⌘-click adds or drops one row; shift-click takes every row between it and the last one picked. */
+export type PickMode = 'toggle' | 'range'
+
+/** The pick a click asks for, or null for a plain click that opens the session. */
+function pickMode(e: React.MouseEvent): PickMode | null {
+  if (mac ? e.metaKey : e.ctrlKey) return 'toggle'
+  if (e.shiftKey) return 'range'
+  return null
 }
 
 /** A folder's own name, which is what the user pointed Maestro at. */
@@ -223,8 +236,10 @@ function GroupBody({
   syncs,
   unseenSet,
   activeId,
+  selectedSet,
   now,
   onSelect,
+  onPick,
   onRestore,
   onArchive,
   onDelete,
@@ -243,10 +258,15 @@ function GroupBody({
       // cannot legally contain buttons.
       <div
         key={session.id}
-        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}${isLanded(sync) ? ' is-landed' : ''}`}
+        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}${isLanded(sync) ? ' is-landed' : ''}${selectedSet.has(session.id) ? ' is-selected' : ''}`}
         role="button"
         tabIndex={0}
-        onClick={() => onSelect(session.id)}
+        aria-selected={selectedSet.has(session.id)}
+        onClick={(e) => {
+          const mode = pickMode(e)
+          if (mode) onPick(session.id, mode)
+          else onSelect(session.id)
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
@@ -367,7 +387,16 @@ function GroupBody({
 
           {showArchived &&
             archived.map((session) => (
-              <div className="session-row is-archived" key={session.id}>
+              // Opens nothing, but joins a selection like any other row.
+              <div
+                className={`session-row is-archived${selectedSet.has(session.id) ? ' is-selected' : ''}`}
+                key={session.id}
+                aria-selected={selectedSet.has(session.id)}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('button')) return
+                  if (pickMode(e)) onPick(session.id, 'toggle')
+                }}
+              >
                 <i
                   className="ph ph-archive"
                   style={{ fontSize: 13, color: 'var(--color-neutral-700)', flexShrink: 0 }}
@@ -420,10 +449,15 @@ interface SidebarProps {
   /** The branch this instance is running out of — what actually distinguishes two dev windows. */
   sourceLabel: string
   activeId: string | null
+  /** Rows picked for a bulk archive or delete. */
+  selected: string[]
   now: number
   /** Held by the shell, because the number chords count only the rows actually listed. */
   localCollapsed: boolean
   onSelect: (id: string) => void
+  onPick: (id: string, mode: PickMode) => void
+  onBulk: (action: 'archive' | 'delete') => void
+  onClearSelection: () => void
   onNewSession: (repoId?: string) => void
   /** Opens a folder with no repo behind it. */
   onNewLocal: () => void
@@ -552,9 +586,13 @@ export default function Sidebar({
   profile,
   sourceLabel,
   activeId,
+  selected,
   now,
   localCollapsed,
   onSelect,
+  onPick,
+  onBulk,
+  onClearSelection,
   onNewSession,
   onNewLocal,
   onToggleLocal,
@@ -580,8 +618,10 @@ export default function Sidebar({
     syncs,
     unseenSet,
     activeId,
+    selectedSet: new Set(selected),
     now,
     onSelect,
+    onPick,
     onRestore,
     onArchive,
     onDelete,
@@ -769,6 +809,39 @@ export default function Sidebar({
           )
         })}
       </div>
+
+      {selected.length > 0 && (
+        <div className="sidebar__selection" role="toolbar" aria-label="Selected sessions">
+          <span className="sidebar__selection-count">{selected.length} selected</span>
+          {/* Archived rows can only be deleted, so archive waits for a live one. */}
+          <button
+            className="icon-btn-bare"
+            onClick={() => onBulk('archive')}
+            disabled={selected.every((id) => sessions.find((s) => s.id === id)?.archived)}
+            aria-label="Archive selected"
+            data-tip="Archive…"
+          >
+            <i className="ph ph-archive" style={{ fontSize: 15 }} />
+          </button>
+          <button
+            className="icon-btn-bare is-danger"
+            onClick={() => onBulk('delete')}
+            aria-label="Delete selected"
+            data-tip="Delete…"
+          >
+            <i className="ph ph-trash" style={{ fontSize: 15 }} />
+          </button>
+          <button
+            className="icon-btn-bare"
+            onClick={onClearSelection}
+            aria-label="Clear selection"
+            data-tip="Clear"
+            data-tip-hint="Esc"
+          >
+            <i className="ph ph-x" style={{ fontSize: 15 }} />
+          </button>
+        </div>
+      )}
 
       <UpdateBar
         update={update}
