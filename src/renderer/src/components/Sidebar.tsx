@@ -426,6 +426,7 @@ interface SidebarProps {
   onDelete: (id: string) => void
   onRename: (id: string) => void
   onOpenSettings: () => void
+  onOpenAbout: () => void
   update: UpdateStatus
   onUpdate: () => void
   onUpdateLog: () => void
@@ -529,6 +530,7 @@ export default function Sidebar({
   onDelete,
   onRename,
   onOpenSettings,
+  onOpenAbout,
   update,
   onUpdate,
   onUpdateLog
@@ -738,6 +740,9 @@ export default function Sidebar({
         </button>
         <button className="icon-btn-bare" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           <i className="ph ph-gear" style={{ fontSize: 18 }} />
+        </button>
+        <button className="icon-btn-bare" onClick={onOpenAbout} aria-label="About" title="About">
+          <i className="ph ph-info" style={{ fontSize: 18 }} />
         </button>
       </div>
     </aside>

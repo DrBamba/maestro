@@ -577,6 +577,33 @@ select {
   border-top: 1px solid var(--hairline);
 }
 
+/* About: a label and a value per row, the value free to be a long path. */
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.about__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.about__label {
+  width: 110px;
+  flex-shrink: 0;
+  color: var(--color-neutral-500);
+}
+
+.about__value {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Above the footer, only while there is an update to speak of. */
 .sidebar__update {
   padding: 12px 18px 0;

@@ -1142,3 +1142,18 @@ test('a shared folder can be deleted with its sessions', async ({ window, profil
   await expect(window.locator('.repo-group--local .session-row')).toHaveCount(0)
   expect(existsSync(folder)).toBe(false)
 })
+
+test('About says which Maestro this is and where it keeps things', async ({ window }) => {
+  await window.click('[aria-label="About"]')
+  const dialog = window.locator('.modal')
+  await expect(dialog.locator('.modal__title')).toHaveText('About Maestro')
+
+  // A test profile is a custom one, and its worktrees live inside it rather than under ~/maestro.
+  const row = (label: string) =>
+    dialog.locator('.about__row').filter({ has: window.locator(`.about__label:text-is("${label}")`) })
+  await expect(row('Running')).toContainText('Custom profile')
+  await expect(row('Worktrees')).toContainText('worktrees')
+
+  await dialog.locator('.modal__actions .btn').click()
+  await expect(window.locator('.modal')).toHaveCount(0)
+})
