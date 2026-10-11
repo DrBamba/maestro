@@ -418,6 +418,8 @@ interface SidebarProps {
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
   onRemoveRepo: (repoId: string) => void
+  /** Every listed repo's id, in the order they were dragged into. */
+  onReorderRepos: (ids: string[]) => void
   onDeleteLocalFolder: (path: string) => void
   onRestore: (id: string) => void
   onArchive: (id: string) => void
@@ -520,6 +522,7 @@ export default function Sidebar({
   onToggleRepo,
   onAddRepo,
   onRemoveRepo,
+  onReorderRepos,
   onDeleteLocalFolder,
   onRestore,
   onArchive,
@@ -542,6 +545,37 @@ export default function Sidebar({
     onDelete,
     onRename
   }
+  /*
+   * A repo is dragged by its heading and dropped anywhere in the list. Where it lands is the slot
+   * the pointer is in, counted against the middle of each repo group — so a drop on Local or above
+   * the first repo makes it first, and one in the empty space under the last makes it last. Local
+   * itself never moves: it is not a repo, and it always heads the list.
+   */
+  const [dragged, setDragged] = useState<string | null>(null)
+  /** The slot the drop would take, as an index among the repos — null where it would move nothing. */
+  const [slot, setSlot] = useState<number | null>(null)
+  const endDrag = (): void => {
+    setDragged(null)
+    setSlot(null)
+  }
+  const slotAt = (list: HTMLElement, y: number): number | null => {
+    const from = repos.findIndex((r) => r.id === dragged)
+    const at = [...list.querySelectorAll<HTMLElement>('[data-repo-id]')].filter((group) => {
+      const box = group.getBoundingClientRect()
+      return box.top + box.height / 2 < y
+    }).length
+    return at === from || at === from + 1 ? null : at
+  }
+  const dropRepo = (): void => {
+    if (dragged && slot !== null) {
+      const from = repos.findIndex((r) => r.id === dragged)
+      const ids = repos.map((r) => r.id).filter((id) => id !== dragged)
+      ids.splice(slot > from ? slot - 1 : slot, 0, dragged)
+      onReorderRepos(ids)
+    }
+    endDrag()
+  }
+
   const localRows = groupRows(sessions, null)
   const localArchived = sessions
     .filter((s) => isLocal(s) && s.archived)
@@ -573,7 +607,23 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="sidebar__scroll">
+      <div
+        className="sidebar__scroll"
+        onDragOver={(e) => {
+          if (!dragged) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const next = slotAt(e.currentTarget, e.clientY)
+          if (next !== slot) setSlot(next)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSlot(null)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          dropRepo()
+        }}
+      >
         {/*
          * Local sits above the repos, and stays visible when it is empty: it is the answer to
          * "I just want a terminal here", and an entry point nobody can find is not one.
@@ -616,14 +666,27 @@ export default function Sidebar({
           <div className="sidebar__empty">No repos yet. Add one to start a session.</div>
         )}
 
-        {repos.map((repo) => {
+        {repos.map((repo, index) => {
           const rows = groupRows(sessions, repo.id)
           const archived = sessions
             .filter((s) => s.repoId === repo.id && s.archived)
             .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
           return (
-            <div className="repo-group" key={repo.id}>
-              <div className="repo-head">
+            <div
+              className={`repo-group${dragged === repo.id ? ' is-lifted' : ''}${slot === index ? ' is-drop-before' : ''}${slot === repos.length && index === repos.length - 1 ? ' is-drop-after' : ''}`}
+              key={repo.id}
+              data-repo-id={repo.id}
+            >
+              <div
+                className="repo-head"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', repo.id)
+                  setDragged(repo.id)
+                }}
+                onDragEnd={endDrag}
+              >
                 <button
                   className="icon-btn-bare"
                   onClick={() => onToggleRepo(repo.id)}
@@ -631,7 +694,7 @@ export default function Sidebar({
                 >
                   <i className={`ph ph-caret-down repo-head__caret${repo.collapsed ? ' is-collapsed' : ''}`} />
                 </button>
-                <span className="repo-head__name" title={repo.path}>
+                <span className="repo-head__name" data-tip={repo.path} data-tip-hint="Drag to reorder">
                   {repo.name}
                 </span>
                 <button

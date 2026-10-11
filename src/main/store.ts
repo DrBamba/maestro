@@ -241,6 +241,18 @@ class Store {
     return repo
   }
 
+  /**
+   * Puts the listed repos in that order. Removed repos are not on screen to be ordered, so they keep
+   * their place at the end, and an id this store does not know is ignored.
+   */
+  reorderRepos(ids: string[]): void {
+    const rank = new Map(ids.map((id, i) => [id, i]))
+    const listed = this.data.repos.filter((r) => rank.has(r.id))
+    listed.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+    this.data.repos = [...listed, ...this.data.repos.filter((r) => !rank.has(r.id))]
+    this.flush()
+  }
+
   /** The repo and every session record of it, for a repo whose folder is gone. */
   dropRepo(id: string): void {
     this.data.repos = this.data.repos.filter((r) => r.id !== id)

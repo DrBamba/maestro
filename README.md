@@ -1,5 +1,11 @@
 # Maestro
 
+> **Update the installed app from `main`:** quit Maestro, then run
+>
+> ```
+> cd ~/repos/maestro && git pull && npm run install-stable
+> ```
+
 A desktop app for running and managing Claude Code agent sessions in parallel. Each session gets
 its own git worktree, its own branch, and a **real Claude Code terminal** — not a chat wrapper.
 
