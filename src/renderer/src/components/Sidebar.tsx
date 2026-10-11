@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AgentState, AgentStatus, Repo, Session, UpdateStatus } from '@shared/types'
+import type { AgentState, AgentStatus, Repo, Session, TestProgress, UpdateStatus } from '@shared/types'
 import { isLocal } from '@shared/types'
 import { relativeTime } from '../lib/format'
 
@@ -438,6 +438,32 @@ const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
   publish: 'Installing update…'
 }
 
+function timeLeft(seconds: number | null): string {
+  if (seconds === null) return ''
+  if (seconds < 60) return ' · under a minute left'
+  return ` · about ${Math.round(seconds / 60)} min left`
+}
+
+function TestBar({ tests }: { tests: TestProgress }): React.JSX.Element {
+  return (
+    <>
+      <div
+        className="sidebar__progress"
+        role="progressbar"
+        aria-label="Update tests"
+        aria-valuemin={0}
+        aria-valuemax={tests.total}
+        aria-valuenow={tests.done}
+      >
+        <div style={{ width: `${(100 * tests.done) / Math.max(1, tests.total)}%` }} />
+      </div>
+      <div className="sidebar__update-note">
+        {tests.done} of {tests.total} tests{timeLeft(tests.leftSeconds)}
+      </div>
+    </>
+  )
+}
+
 /** Only there when there is something newer than what is running. Nothing updates until pressed. */
 function UpdateBar({
   update,
@@ -477,6 +503,7 @@ function UpdateBar({
           <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
             <i className="ph ph-file-text" style={{ fontSize: 16 }} />
           </button>
+          {update.state === 'building' && update.tests && <TestBar tests={update.tests} />}
         </div>
       )
     case 'failed':

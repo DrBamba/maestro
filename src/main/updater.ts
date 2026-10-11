@@ -4,7 +4,7 @@ import { createWriteStream, existsSync, mkdirSync, watch, type FSWatcher } from 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import type { UpdateStatus } from '@shared/types'
+import type { TestProgress, UpdateStatus } from '@shared/types'
 import { HOST_PROTOCOL } from './ptyProtocol'
 import { ptys } from './pty'
 import { Releases, readStamp, releasesDir, type ReleaseStamp } from './releases'
@@ -88,6 +88,9 @@ class Updater {
     this.options = options
     this.releases = new Releases(releasesDir(app.getPath('userData')))
     this.running = readStamp(join(here, '..'))
+    // Tests run `out/`, which names the checkout that built it; its `main` must not move under them.
+    const source = process.env.MAESTRO_SOURCE_REPO
+    if (this.running && source !== undefined) this.running = { ...this.running, repo: source }
     this.shown = process.env.MAESTRO_RELEASE_ID || this.running?.id || ''
 
     mkdirSync(this.releases.dir, { recursive: true })
@@ -303,6 +306,8 @@ class Updater {
     this.child = child
 
     let step: 'build' | 'test' | 'publish' = 'build'
+    let tests: TestProgress | undefined
+    let testsFrom = 0
     let said = ''
     const buffered = { out: '', err: '' }
     const read = (chunk: Buffer, fromStderr = false): void => {
@@ -312,14 +317,23 @@ class Updater {
       const lines = buffered[stream].split('\n')
       buffered[stream] = lines.pop() ?? ''
       for (const line of lines) {
+        const running = /^Running (\d+) tests? using/.exec(line.trim())
         if (line.startsWith('$ npx playwright')) step = 'test'
-        else if (line.startsWith('release: published')) step = 'publish'
+        else if (running) {
+          tests = { done: 0, total: Number(running[1]), leftSeconds: null }
+          testsFrom = Date.now()
+        } else if (tests && /^\s+[✓✘-]\s+\d+ /.test(line)) {
+          // A retry reports again under a new number, so the count is capped rather than trusted.
+          const done = Math.min(tests.total, tests.done + 1)
+          const perTest = (Date.now() - testsFrom) / done
+          tests = { done, total: tests.total, leftSeconds: Math.round((perTest * (tests.total - done)) / 1000) }
+        } else if (line.startsWith('release: published')) step = 'publish'
         // The script's own explanation when it refused, which it prints to stderr.
         else if (fromStderr && line.startsWith('release: ') && !line.endsWith(' failed')) {
           said = line.slice(9).replaceAll('`', '')
         }
       }
-      this.setStatus({ state: 'building', step })
+      this.setStatus({ state: 'building', step, ...(step === 'test' && tests ? { tests } : {}) })
     }
     child.stdout?.on('data', (chunk: Buffer) => read(chunk))
     child.stderr?.on('data', (chunk: Buffer) => read(chunk, true))
