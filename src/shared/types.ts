@@ -463,6 +463,12 @@ export interface Preferences {
    * on a timer, and a repository whose `main` only moves locally gains nothing from it.
    */
   remoteUpdates?: boolean
+  /**
+   * Whether the update button skips the test suite and only builds `main`. Off unless asked for:
+   * the tests are what stop a broken `main` from replacing a working app, and turning them off
+   * trusts that `main` was tested before it merged.
+   */
+  skipUpdateTests?: boolean
 }
 
 /**

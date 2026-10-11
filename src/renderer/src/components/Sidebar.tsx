@@ -429,6 +429,7 @@ interface SidebarProps {
   onOpenAbout: () => void
   update: UpdateStatus
   onUpdate: () => void
+  onUpdateCancel: () => void
   onUpdateLog: () => void
 }
 
@@ -442,10 +443,12 @@ const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
 function UpdateBar({
   update,
   onUpdate,
+  onUpdateCancel,
   onUpdateLog
 }: {
   update: UpdateStatus
   onUpdate: () => void
+  onUpdateCancel: () => void
   onUpdateLog: () => void
 }): React.JSX.Element | null {
   if (update.state === 'none') return null
@@ -485,6 +488,16 @@ function UpdateBar({
           <span className="sidebar__update-note">
             {update.state === 'applying' ? 'Updating…' : BUILD_STEP[update.step]}
           </span>
+          {update.state === 'building' && update.step !== 'publish' && (
+            <button
+              className="icon-btn-bare"
+              onClick={onUpdateCancel}
+              aria-label="Cancel update"
+              data-tip="Cancel update"
+            >
+              <i className="ph ph-x" style={{ fontSize: 15 }} />
+            </button>
+          )}
           {log}
         </div>
       )
@@ -544,6 +557,7 @@ export default function Sidebar({
   onOpenAbout,
   update,
   onUpdate,
+  onUpdateCancel,
   onUpdateLog
 }: SidebarProps): React.JSX.Element {
   const unseenSet = new Set(unseen)
@@ -741,7 +755,12 @@ export default function Sidebar({
         })}
       </div>
 
-      <UpdateBar update={update} onUpdate={onUpdate} onUpdateLog={onUpdateLog} />
+      <UpdateBar
+        update={update}
+        onUpdate={onUpdate}
+        onUpdateCancel={onUpdateCancel}
+        onUpdateLog={onUpdateLog}
+      />
 
       <div className="sidebar__foot">
         {/* Sessions are created from a repo's own +, or Cmd+N — this slot adds repos. */}

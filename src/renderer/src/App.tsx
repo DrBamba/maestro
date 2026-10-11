@@ -845,6 +845,7 @@ export default function App(): React.JSX.Element {
         onOpenAbout={() => setOverlay('about')}
         update={update}
         onUpdate={() => window.maestro.update.press()}
+        onUpdateCancel={() => window.maestro.update.cancel()}
         onUpdateLog={() => window.maestro.update.openLog()}
       />
 
