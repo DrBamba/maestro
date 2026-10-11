@@ -129,9 +129,14 @@ class Store {
     if (changed) this.flushNow()
   }
 
-  /** Debounced atomic write — the UI mutates state far more often than the disk needs it. */
+  /**
+   * Batched atomic write — the UI mutates state far more often than the disk needs it.
+   *
+   * A change joins the write already pending rather than pushing it back: a stream of small ones,
+   * like a pane being resized, must not hold a new session's record off the disk until it stops.
+   */
   private flush(): void {
-    if (this.flushTimer) clearTimeout(this.flushTimer)
+    if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
       this.flushNow()
