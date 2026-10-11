@@ -1,6 +1,10 @@
 # Maestro
 
-> **Update the installed app from `main`:** quit Maestro, then run
+> **Updating the installed app:** press **Update Maestro** in the sidebar. It builds and tests
+> `main`, then applies it without stopping the agents — see
+> [Updating Maestro while it runs](#updating-maestro-while-it-runs).
+>
+> Once, to get that button — and again whenever a runtime dependency changes:
 >
 > ```
 > cd ~/repos/maestro && git pull && npm run install-stable
