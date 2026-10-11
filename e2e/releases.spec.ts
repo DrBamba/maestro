@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test, expect } from './fixtures'
@@ -196,15 +197,22 @@ test('a release that needs a new terminal host offers a restart instead', async 
  */
 const RELEASE_STUB = `
 import { cpSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { join } from 'node:path'
 const releases = join(process.env.MAESTRO_USER_DATA_DIR, 'releases')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 console.log('$ npm run typecheck')
 await sleep(800)
 console.log('$ npx playwright test')
+const mode = readFileSync('stub-mode', 'utf8').trim()
+if (mode === 'slow') {
+  // A test run that outlives the script unless its whole group is stopped.
+  const runner = spawn('sleep', ['60'])
+  writeFileSync('runner-pid', String(runner.pid))
+  await new Promise((resolve) => runner.on('exit', resolve))
+}
 await sleep(1500)
-if (readFileSync('stub-mode', 'utf8').trim() === 'fail') {
+if (mode === 'fail') {
   console.error('\\nrelease: npx playwright test failed')
   process.exit(1)
 }
@@ -239,6 +247,15 @@ async function scratchRepo(profileDir: string): Promise<{ repo: string; commit: 
     return git('rev-parse', 'HEAD')
   }
   return { repo, git, commit }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function hasBuilt(window: Page): Promise<boolean> {
@@ -294,6 +311,27 @@ test('a build that fails its tests says so and can be retried', async ({ window,
   await writeFile(join(scratch.repo, 'stub-mode'), 'pass')
   await bar.locator('.btn:has-text("Retry update")').click()
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
+})
+
+test('a build can be cancelled, and the update is offered again', async ({ window, profileDir }) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+  await writeFile(join(scratch.repo, 'stub-mode'), 'slow')
+  scratch.commit('a slow button')
+
+  await updateButton(window).click()
+  const bar = window.locator('.sidebar__update')
+  await expect(bar).toContainText('Testing update…', { timeout: 10_000 })
+  const pidFile = join(scratch.repo, 'runner-pid')
+  await expect.poll(() => existsSync(pidFile), { timeout: 10_000 }).toBe(true)
+  const runner = Number(readFileSync(pidFile, 'utf8'))
+
+  await bar.getByRole('button', { name: 'Cancel update' }).click()
+  await expect(updateButton(window)).toBeVisible({ timeout: 10_000 })
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  await expect.poll(() => isAlive(runner), { timeout: 5_000 }).toBe(false)
+  await window.waitForTimeout(2000)
+  expect(await hasBuilt(window)).toBe(false)
+  await expect(window.locator('.sidebar__update--failed')).toHaveCount(0)
 })
 
 test('an update finishing while a dialog is open waits for it to close', async ({

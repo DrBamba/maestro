@@ -62,6 +62,8 @@ class Updater {
   /** The `main` commit last seen ahead of the running build. */
   private aheadAt = ''
   private child: ChildProcess | null = null
+  /** Cancel was pressed: the build's exit is not a failure. */
+  private cancelled = false
   private refreshing = false
   private again = false
   private watcher: FSWatcher | null = null
@@ -78,6 +80,7 @@ class Updater {
   start(options: UpdaterOptions): void {
     ipcMain.handle('update:status', () => this.status)
     ipcMain.on('update:press', () => this.press())
+    ipcMain.on('update:cancel', () => this.cancel())
     ipcMain.on('update:log', () => void shell.openPath(this.logFile()))
     ipcMain.on('ui:busy', (_e, busy: boolean) => {
       this.busy = busy
@@ -121,7 +124,7 @@ class Updater {
     if (this.poll) clearInterval(this.poll)
     if (this.fetchTimer) clearInterval(this.fetchTimer)
     if (this.nudge) clearTimeout(this.nudge)
-    this.child?.kill()
+    this.killBuild()
   }
 
   /**
@@ -279,6 +282,28 @@ class Updater {
     }
   }
 
+  /** Stops a build before it publishes. The button goes back to offering the update. */
+  private cancel(): void {
+    if (!this.child || this.status.state !== 'building' || this.status.step === 'publish') return
+    this.cancelled = true
+    this.wanted = false
+    this.killBuild()
+  }
+
+  /**
+   * The script runs npm, Vite and Playwright under it, each with children of its own; signalling
+   * its process group reaches all of them. It cleans up its worktree and lock on the way out.
+   */
+  private killBuild(): void {
+    const pid = this.child?.pid
+    if (!pid) return
+    try {
+      process.kill(-pid, 'SIGTERM')
+    } catch {
+      this.child?.kill()
+    }
+  }
+
   /** Runs the release script for `main`, then applies what it publishes. */
   private build(): void {
     const repo = this.live()?.repo
@@ -294,11 +319,14 @@ class Updater {
     if (!node) return fail('node is not on PATH. Install Node, then retry.')
 
     this.wanted = true
+    this.cancelled = false
     this.setStatus({ state: 'building', step: 'build' })
     const log = createWriteStream(this.logFile())
     const child = spawn(node, [script, '--ref', 'main'], {
       cwd: repo,
-      env: { ...process.env, MAESTRO_USER_DATA_DIR: app.getPath('userData') }
+      env: { ...process.env, MAESTRO_USER_DATA_DIR: app.getPath('userData') },
+      // Its own process group, so cancelling stops everything it started.
+      detached: true
     })
     this.child = child
 
@@ -327,6 +355,11 @@ class Updater {
     child.on('close', (code) => {
       log.end()
       this.child = null
+      if (this.cancelled) {
+        this.cancelled = false
+        // Back to whatever is on offer, including a release published just before the signal.
+        return void this.refresh()
+      }
       if (code === 0) return void this.refresh()
       const message =
         said ||

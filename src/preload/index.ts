@@ -271,6 +271,8 @@ const api = {
     onStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb),
     /** Does whatever the button currently offers: build and apply, apply, or restart. */
     press: (): void => ipcRenderer.send('update:press'),
+    /** Stops a build before it publishes. */
+    cancel: (): void => ipcRenderer.send('update:cancel'),
     openLog: (): void => ipcRenderer.send('update:log')
   }
 }

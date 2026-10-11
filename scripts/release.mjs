@@ -129,6 +129,8 @@ function cleanup() {
 }
 process.on('exit', cleanup)
 process.on('SIGINT', () => process.exit(130))
+// Cancelled from the app's update button, which signals the whole group.
+process.on('SIGTERM', () => process.exit(143))
 
 // ── checks against what is live ──────────────────────────────────────────────
 const currentId = (() => {
