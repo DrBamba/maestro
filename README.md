@@ -1,17 +1,47 @@
 # Maestro
 
-> **Updating the installed app:** press **Update Maestro** in the sidebar. It builds and tests
-> `main`, then applies it without stopping the agents — see
-> [Updating Maestro while it runs](#updating-maestro-while-it-runs).
->
-> Once, to get that button — and again whenever a runtime dependency changes:
->
-> ```
-> cd ~/repos/maestro && git pull && npm run install-stable
-> ```
+> [!WARNING]
+> **This is 100% vibe-coded.** Every line was written by AI agents, with minimal human review
+> for quality or security. Nobody has audited it. Read the code before you trust it with your
+> machine, and don't run it anywhere you would mind something going wrong. See
+> [Security](#security).
 
 A desktop app for running and managing Claude Code agent sessions in parallel. Each session gets
 its own git worktree, its own branch, and a **real Claude Code terminal** — not a chat wrapper.
+
+- **One worktree per session.** Cut a session from any repo; Maestro makes the branch and the
+  worktree, runs the repo's setup script, and starts `claude` in it.
+- **The real terminal and a real editor.** Claude Code runs in a PTY, and code-server supplies a
+  full VS Code beside it.
+- **See every agent at a glance.** The sidebar shows which sessions are working, which are asking
+  for you, and which have finished.
+- **Land the work.** Rebase or merge back onto the base branch, or open a PR with `gh`.
+
+Runs on macOS and Ubuntu.
+
+## Quick start
+
+You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude` on `PATH`,
+signed in), `git`, and Node.js 22 or later.
+
+```bash
+git clone https://github.com/DrBamba/maestro.git
+cd maestro
+npm install
+npm run dev
+```
+
+To install it as an app on an Apple Silicon Mac:
+
+```bash
+npm run install-stable   # builds the .dmg and copies Maestro.app into /Applications
+```
+
+From then on the installed app updates itself from this checkout's `main` — see
+[Updating Maestro while it runs](#updating-maestro-while-it-runs). For a `.deb` or an Intel Mac, see
+[Packaging](#packaging).
+
+## What's in it
 
 Above the repos sits **Local**: a folder to work in with no repo behind it, for the things that are
 not a feature branch. Say what you are working on and Maestro makes the folder — under
@@ -41,6 +71,7 @@ Two deliberate bets, from [`PLAN.md`](./PLAN.md):
 ```bash
 npm install     # also rebuilds node-pty against Electron's ABI
 npm run dev     # or: npm run build && npm start
+npm run e2e     # build, then run the Playwright suite against the real app
 ```
 
 Requires `claude` on `PATH`. Optional: `code-server` for the embedded editor, `gh` for PR creation.
@@ -118,15 +149,16 @@ restriction is a non-issue, and it declares `git` and the Electron libraries as 
 ([`app.ts`](./src/main/app.ts)) so the dock lights up the launcher rather than adding a second
 nameless icon beside it.
 
-The app icon lives in [`build/`](./build/README.md): `icon.svg` is the master — variant 6a from the
-*Maestro Icon* Claude Design project — and the PNGs beside it are rendered from it by
+The app icon lives in [`build/`](./build/README.md): `icon.svg` is the master, and the PNGs beside
+it are rendered from it by
 `linux/test.sh icon`. macOS's `.icns` and Linux's `hicolor` set are both built from those at package
 time.
 
 ### Updating Maestro while it runs
 
 Maestro is developed with Maestro, so the copy you are working in has to take changes without
-being closed — and without running anything unfinished.
+being closed — and without running anything unfinished. The installed app follows `main` in the
+checkout it was built from, wherever you cloned it.
 
 - **While building a change:** `npm run dev` in the session's worktree opens a separate "Maestro
   Dev" window that updates on every save.
@@ -162,8 +194,11 @@ The rules that keep it unbroken:
 
 A new terminal-host protocol (`HOST_PROTOCOL` in [`ptyProtocol.ts`](./src/main/ptyProtocol.ts))
 cannot be applied live, since it means replacing the host and the agents in it; the button offers
-**Restart to update** instead. A new runtime dependency needs `npm run install-stable`, as does the
-first update of an app installed before any of this existed.
+**Restart to update** instead. A new runtime dependency needs `npm run install-stable` again:
+
+```bash
+cd path/to/maestro && git pull && npm run install-stable
+```
 
 ### Testing on Linux from a Mac
 
@@ -225,8 +260,7 @@ cache, pulling images — a line in the script releases the wait:
 
 ## Design
 
-The UI is an implementation of `Maestro.dc.html` from the *# Agentic IDE desktop app* Claude Design
-project, built on the **Nocturne** design system. Nocturne's tokens are ported verbatim into
+The UI is built on the **Nocturne** design system. Nocturne's tokens are ported verbatim into
 [`src/renderer/src/styles/theme.css`](./src/renderer/src/styles/theme.css) — the ramps, the 0.70×
 spacing scale, 8px radii, Inter, Phosphor icons, outlined primary actions, and rules that fade to
 transparent at their ends. The `--shell-*` layer on top is the darker app chrome the design uses so
@@ -285,3 +319,29 @@ mode inside a running one.
 Not yet built: the cross-repo dashboard home view, per-repo run scripts (the data model carries them;
 nothing edits them yet — setup scripts left the store entirely and became a file in the repo, see
 above), and session archive/restore beyond the current worktree lifecycle.
+
+## Security
+
+Maestro has had no security review. Some of what it does by design:
+
+- **Runs code from the repos you add.** A repo's `.maestro/setup.sh` runs in every new worktree,
+  without asking.
+- **Can let Claude act without asking.** With auto mode on, sessions start with
+  `claude --permission-mode auto`.
+- **Serves an editor with no password.** code-server listens on `127.0.0.1` with `--auth none`,
+  so any process on your machine can reach it, terminal included.
+- **Writes into your repos.** It adds `.claude/settings.local.json` hooks to each worktree, and a
+  shared-folder rule to `.claude/rules/` in folders with more than one session.
+
+Only add repos you trust. Please report security problems as GitHub issues, without exploit
+details.
+
+## Contributing
+
+Issues and pull requests are welcome. [`PLAN.md`](./PLAN.md) explains what Maestro is for and the
+bets it makes; [`CLAUDE.md`](./CLAUDE.md) holds the conventions agents working on it follow,
+including the rules for UI copy. Run `npm run typecheck` and `npm run e2e` before opening a PR.
+
+## License
+
+[MIT](./LICENSE) © Raz Kafri

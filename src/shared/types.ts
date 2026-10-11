@@ -83,7 +83,7 @@ export interface Session {
   id: string
   /** {@link LOCAL_REPO_ID} for a local session — see {@link isLocal}. */
   repoId: string
-  /** What the user typed — "fix verdict pagination". */
+  /** What the user typed — "fix invoice pagination". */
   name: string
   /** feature/<slug>, empty for a local session. */
   branch: string

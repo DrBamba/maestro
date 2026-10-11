@@ -204,7 +204,7 @@ export default function NewSessionDialog({
           ref={inputRef}
           className="input textarea textarea--grow"
           rows={1}
-          placeholder="e.g. fix the double page on the verdict list"
+          placeholder="e.g. fix the double page on the invoice list"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {

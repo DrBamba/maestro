@@ -1,4 +1,8 @@
 node_modules/
+
+# Hooks Maestro writes into every worktree it runs Claude in — this checkout included. They hold
+# absolute paths into the machine they were written on.
+.claude/settings.local.json
 out/
 dist/
 .DS_Store

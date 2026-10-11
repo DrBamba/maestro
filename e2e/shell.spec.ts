@@ -75,13 +75,13 @@ test('a dev profile seeds its demo repos and touches nothing real', async ({ win
 })
 
 test('what you typed is handed to Claude as its first message', async ({ window, agentLog }) => {
-  await createSession(window, 'fix the double page on the verdict list')
+  await createSession(window, 'fix the double page on the invoice list')
 
   // Asserted through the process: the prompt is an argv entry, so it never appears in the DOM and
   // never reaches the terminal's stdin either.
   await expect
     .poll(agentLog, { timeout: 20_000 })
-    .toContain('ARGS: fix the double page on the verdict list')
+    .toContain('ARGS: fix the double page on the invoice list')
 })
 
 test('an empty message opens Claude on its own prompt instead', async ({ window, agentLog }) => {
@@ -111,7 +111,7 @@ test('Shift+Enter writes a second line rather than creating the session', async 
   agentLog
 }) => {
   await window.click('[aria-label="New session in demo-api"]')
-  await window.fill('#session-name', 'rename the verdict list')
+  await window.fill('#session-name', 'rename the invoice list')
 
   /*
    * Enter is what creates the session, so an instruction longer than a sentence is only writable
@@ -126,7 +126,7 @@ test('Shift+Enter writes a second line rather than creating the session', async 
   await window.press('#session-name', 'Enter')
   await expect
     .poll(agentLog, { timeout: 30_000 })
-    .toContain('ARGS: rename the verdict list\nand keep the old route working')
+    .toContain('ARGS: rename the invoice list\nand keep the old route working')
 })
 
 test('auto mode, once chosen, is how Claude is launched', async ({
@@ -224,7 +224,7 @@ test('the launcher offers that setting where Claude is actually started', async 
 })
 
 test('the worktree and branch take a short handle, not the typed text', async ({ window }) => {
-  await createSession(window, 'fix the double page on the verdict list')
+  await createSession(window, 'fix the double page on the invoice list')
 
   const session = await window.evaluate(() =>
     window.maestro.snapshot().then((s) => s.sessions[0])
@@ -236,7 +236,7 @@ test('the worktree and branch take a short handle, not the typed text', async ({
    * The point of the handle: the typed text is a sentence now, and the directory is the one name
    * that can never be corrected later — Claude Code keys its history by the absolute path.
    */
-  expect(session.worktreePath).not.toContain('verdict')
+  expect(session.worktreePath).not.toContain('invoice')
 })
 
 test('a session can pick up an existing branch instead of stacking one on top', async ({

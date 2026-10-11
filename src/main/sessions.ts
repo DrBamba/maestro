@@ -65,7 +65,7 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/** The directory- and branch-safe form of a name — "Fix the verdict list" → "fix-the-verdict-list". */
+/** The directory- and branch-safe form of a name — "Fix the invoice list" → "fix-the-invoice-list". */
 export function slugify(name: string): string {
   const slug = name
     .toLowerCase()
