@@ -16,6 +16,8 @@ test.use({
     MAESTRO_RELEASES: '1',
     MAESTRO_WINDOW_DEADLINE_MS: '4000',
     MAESTRO_NO_RELAUNCH: '1',
+    // Away from the checkout that built `out/`, so its `main` moving cannot offer a real update.
+    MAESTRO_SOURCE_REPO: '',
     // Deliberately slower than the tests wait: what notices `main` moving is the watch on its ref.
     MAESTRO_UPDATE_POLL_MS: '120000',
     MAESTRO_UPDATE_FETCH_MS: '2000'
@@ -58,7 +60,7 @@ async function publish(
   stamp.builtAt += 60_000
   stamp.hashes.renderer = `changed-${id}`
   if (changeMain) stamp.hashes.main = `changed-${id}`
-  if (source) Object.assign(stamp, source)
+  Object.assign(stamp, source ?? { repo: '' })
   await writeFile(join(bundle, 'release.json'), JSON.stringify(stamp))
 
   await writeFile(join(releases, 'current.partial'), id)
@@ -204,7 +206,13 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 console.log('$ npm run typecheck')
 await sleep(800)
 const testing = !process.argv.includes('--no-tests')
-if (testing) console.log('$ npx playwright test')
+if (testing) {
+  console.log('$ npx playwright test')
+  console.log('Running 4 tests using 2 workers')
+  await sleep(300)
+  console.log('  ✓   1 e2e/a.spec.ts:1:1 › one (0.3s)')
+  console.log('  ✓   2 e2e/a.spec.ts:2:1 › two (0.3s)')
+}
 const mode = readFileSync('stub-mode', 'utf8').trim()
 if (testing && mode === 'slow') {
   // A test run that outlives the script unless its whole group is stopped.
@@ -212,7 +220,7 @@ if (testing && mode === 'slow') {
   writeFileSync('runner-pid', String(runner.pid))
   await new Promise((resolve) => runner.on('exit', resolve))
 }
-await sleep(1500)
+await sleep(2000)
 if (testing && mode === 'fail') {
   console.error('\\nrelease: npx playwright test failed')
   process.exit(1)
@@ -289,7 +297,10 @@ test('new commits on main are offered, and the button builds, tests and applies 
   await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
 
   await updateButton(window).click()
-  await expect(window.locator('.sidebar__update')).toContainText('Testing…', { timeout: 10_000 })
+  await expect(window.locator('.sidebar__update-note')).toHaveText(/^Testing 2\/4 · <1 min$/, {
+    timeout: 10_000
+  })
+  await expect(window.getByRole('progressbar', { name: 'Update tests' })).toHaveAttribute('aria-valuenow', '2')
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
   await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
   await expect(window.locator('.toast')).toContainText('built by the button')
@@ -321,7 +332,7 @@ test('a build can be cancelled, and the update is offered again', async ({ windo
 
   await updateButton(window).click()
   const bar = window.locator('.sidebar__update')
-  await expect(bar).toContainText('Testing…', { timeout: 10_000 })
+  await expect(bar).toContainText('Testing', { timeout: 10_000 })
   const pidFile = join(scratch.repo, 'runner-pid')
   await expect.poll(() => existsSync(pidFile), { timeout: 10_000 }).toBe(true)
   const runner = Number(readFileSync(pidFile, 'utf8'))

@@ -5,6 +5,7 @@ import type {
   BranchSync,
   Repo,
   Session,
+  TestProgress,
   UpdateStatus
 } from '@shared/types'
 import { isLocal } from '@shared/types'
@@ -486,6 +487,12 @@ const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
   publish: 'Installing…'
 }
 
+function testing(tests: TestProgress): string {
+  const left = tests.leftSeconds
+  const eta = left === null ? '' : left < 60 ? ' · <1 min' : ` · ~${Math.round(left / 60)} min`
+  return `Testing ${tests.done}/${tests.total}${eta}`
+}
+
 /** One row above the footer, and only when there is something newer. Nothing updates until pressed. */
 function UpdateBar({
   update,
@@ -528,12 +535,17 @@ function UpdateBar({
         </div>
       )
     case 'building':
-    case 'applying':
+    case 'applying': {
+      const tests = update.state === 'building' ? update.tests : undefined
       return (
         <div className="sidebar__update">
           <span className="spinner" />
           <span className="sidebar__update-note">
-            {update.state === 'applying' ? 'Updating…' : BUILD_STEP[update.step]}
+            {update.state === 'applying'
+              ? 'Updating…'
+              : tests
+                ? testing(tests)
+                : BUILD_STEP[update.step]}
           </span>
           {update.state === 'building' && update.step !== 'publish' && (
             <button
@@ -546,8 +558,21 @@ function UpdateBar({
             </button>
           )}
           {log}
+          {tests && (
+            <div
+              className="sidebar__progress"
+              role="progressbar"
+              aria-label="Update tests"
+              aria-valuemin={0}
+              aria-valuemax={tests.total}
+              aria-valuenow={tests.done}
+            >
+              <div style={{ width: `${(100 * tests.done) / Math.max(1, tests.total)}%` }} />
+            </div>
+          )}
         </div>
       )
+    }
     case 'failed':
       return (
         <div className="sidebar__update">

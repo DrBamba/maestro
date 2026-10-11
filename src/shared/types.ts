@@ -603,6 +603,14 @@ export interface CodeServerInfo {
   reason: string
 }
 
+/** How far an update's test run has got, read from Playwright's output as it goes. */
+export interface TestProgress {
+  done: number
+  total: number
+  /** Estimated from the pace so far; null until the first test finishes. */
+  leftSeconds: number | null
+}
+
 /**
  * Whether there is a newer Maestro to switch to, and where getting it has got to. Shown as the
  * update button; nothing is applied until it is pressed.
@@ -613,7 +621,7 @@ export type UpdateStatus =
   | { state: 'available'; changes: number; subject: string }
   /** A tested build is published and waiting. Pressing applies it. */
   | { state: 'ready'; subject: string }
-  | { state: 'building'; step: 'build' | 'test' | 'publish' }
+  | { state: 'building'; step: 'build' | 'test' | 'publish'; tests?: TestProgress }
   | { state: 'applying' }
   | { state: 'failed'; message: string }
   /** The build needs a new terminal host, which only a real restart can bring. */
