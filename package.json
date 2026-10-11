@@ -4,7 +4,7 @@
   "description": "Run and manage Claude Code agent sessions in parallel \u2014 real terminal, real VS Code.",
   "main": "./out/main/index.js",
   "author": "Raz Kafri",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "homepage": "https://github.com/DrBamba/maestro",
   "desktopName": "io.github.drbamba.maestro",
