@@ -29,6 +29,7 @@ export default function SettingsDialog({
   const theme = preferences.theme ?? 'dark'
   const chime = preferences.chime === true
   const remote = preferences.remoteUpdates === true
+  const skipTests = preferences.skipUpdateTests === true
 
   return (
     <Modal onClose={onClose} width={460} label="Settings">
@@ -138,6 +139,26 @@ export default function SettingsDialog({
           ? 'Fast-forwards main when the remote is ahead, so updates there are offered here.'
           : 'Off: updates are offered when main moves on this machine.'}
       </div>
+
+      <div className="field">
+        <button
+          className="checkbox"
+          aria-label="Skip tests when updating"
+          onClick={() => onChange({ skipUpdateTests: skipTests ? undefined : true })}
+        >
+          <span className={`checkbox__box${skipTests ? ' is-on' : ''}`}>
+            {skipTests && <i className="ph ph-check" />}
+          </span>
+          <span className="checkbox__label">Skip tests when updating Maestro</span>
+        </button>
+      </div>
+
+      {/* Worth saying because the tests are what keep a broken main from replacing a working app. */}
+      {skipTests && (
+        <div className="modal__note">
+          Updates only build main. A build whose window never comes up is still backed out.
+        </div>
+      )}
 
       <div className="modal__actions">
         <button className="btn btn--primary" onClick={onClose}>

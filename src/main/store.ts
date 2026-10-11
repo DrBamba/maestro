@@ -10,6 +10,8 @@ interface Persisted {
   sessions: Session[]
   activeSessionId: string | null
   preferences: Preferences
+  /** How each session's tabs were arranged, by session id — opaque here, shaped by the renderer. */
+  arrangements: Record<string, unknown>
 }
 
 const EMPTY: Persisted = {
@@ -19,7 +21,8 @@ const EMPTY: Persisted = {
   activeSessionId: null,
   // No migration entry: `load` spreads EMPTY first, so a file written before preferences existed
   // comes back with this default rather than an undefined.
-  preferences: {}
+  preferences: {},
+  arrangements: {}
 }
 
 /**
@@ -51,10 +54,10 @@ class Store {
     try {
       const raw = readFileSync(this.file, 'utf8')
       const parsed = JSON.parse(raw) as Persisted
-      this.data = { ...EMPTY, ...parsed }
+      this.data = { ...EMPTY, ...parsed, arrangements: parsed.arrangements ?? {} }
       this.migrate()
     } catch {
-      this.data = { ...EMPTY, repos: [], sessions: [] }
+      this.data = { ...EMPTY, repos: [], sessions: [], arrangements: {} }
     }
   }
 
@@ -126,9 +129,14 @@ class Store {
     if (changed) this.flushNow()
   }
 
-  /** Debounced atomic write — the UI mutates state far more often than the disk needs it. */
+  /**
+   * Batched atomic write — the UI mutates state far more often than the disk needs it.
+   *
+   * A change joins the write already pending rather than pushing it back: a stream of small ones,
+   * like a pane being resized, must not hold a new session's record off the disk until it stops.
+   */
   private flush(): void {
-    if (this.flushTimer) clearTimeout(this.flushTimer)
+    if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
       this.flushNow()
@@ -182,6 +190,24 @@ class Store {
     this.data.preferences = { ...this.data.preferences, ...patch }
     this.flush()
     return this.data.preferences
+  }
+
+  get arrangements(): Record<string, unknown> {
+    return this.data.arrangements
+  }
+
+  /** Null forgets it. */
+  setArrangement(sessionId: string, value: unknown): void {
+    if (value === null || value === undefined) delete this.data.arrangements[sessionId]
+    else this.data.arrangements[sessionId] = value
+    this.flush()
+  }
+
+  private forgetArrangements(): void {
+    const known = new Set(this.data.sessions.map((s) => s.id))
+    for (const id of Object.keys(this.data.arrangements)) {
+      if (!known.has(id)) delete this.data.arrangements[id]
+    }
   }
 
   setActiveSession(id: string | null): void {
@@ -257,6 +283,7 @@ class Store {
   dropRepo(id: string): void {
     this.data.repos = this.data.repos.filter((r) => r.id !== id)
     this.data.sessions = this.data.sessions.filter((s) => s.repoId !== id)
+    this.forgetArrangements()
     if (!this.data.sessions.some((s) => s.id === this.data.activeSessionId)) {
       this.data.activeSessionId = null
     }
@@ -288,6 +315,7 @@ class Store {
 
   removeSession(id: string): void {
     this.data.sessions = this.data.sessions.filter((s) => s.id !== id)
+    this.forgetArrangements()
     if (this.data.activeSessionId === id) this.data.activeSessionId = null
     this.flush()
   }

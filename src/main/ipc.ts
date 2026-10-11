@@ -10,6 +10,7 @@ import type {
   ImportableWorktree,
   LaunchSettings,
   Commit,
+  BranchSync,
   GitStatus,
   MergeInput,
   MergeResult,
@@ -22,6 +23,7 @@ import type {
   Session,
   StartMode
 } from '@shared/types'
+import { isLocal } from '@shared/types'
 import { platformOf } from '@shared/platform'
 import { THEMES, type ThemeName } from '@shared/theme'
 import { onSystemThemeChange, resolvedTheme, syncNativeTheme } from './theme'
@@ -93,6 +95,8 @@ export interface Snapshot {
   heldTerminals: string[]
   /** What the last window stashed about itself, keyed by what it stashed it under. */
   windowState: Record<string, unknown>
+  /** How each session's tabs were last arranged, by session id. Survives a quit, unlike the stash. */
+  arrangements: Record<string, unknown>
 }
 
 const APP_STARTED_AT = Date.now()
@@ -327,7 +331,8 @@ export function registerIpc(): void {
       theme: resolvedTheme(),
       appStartedAt: APP_STARTED_AT,
       heldTerminals: ptys.heldSlots(),
-      windowState: await ptys.stashGet()
+      windowState: await ptys.stashGet(),
+      arrangements: store.arrangements
     }
   })
 
@@ -613,6 +618,29 @@ export function registerIpc(): void {
     }
   })
 
+  // Every listed repo session at once, for the sidebar: only the active one is polled for status.
+  ipcMain.handle('git:sync', async (): Promise<Record<string, BranchSync>> => {
+    const entries = await Promise.all(
+      store.sessions
+        .filter((session) => !session.archived && !isLocal(session))
+        .map(async (session) => {
+          const repo = store.repo(session.repoId)
+          if (!repo) return null
+          try {
+            const sync = await git.branchSync(
+              session.worktreePath,
+              session.branch,
+              repo.defaultBranch
+            )
+            return [session.id, sync] as const
+          } catch {
+            return null
+          }
+        })
+    )
+    return Object.fromEntries(entries.filter((entry) => entry !== null))
+  })
+
   ipcMain.handle('git:commits', async (_e, sessionId: string): Promise<Commit[]> => {
     const ctx = requireSession(sessionId)
     if (!ctx) return []
@@ -847,6 +875,11 @@ export function registerIpc(): void {
    * by the terminal host beside the terminals themselves, so it lasts exactly as long as they do.
    */
   ipcMain.on('ui:stash', (_e, key: string, value: unknown) => ptys.stashSet(key, value))
+
+  // The part of that worth keeping across a quit: where the panes are, without the terminals in them.
+  ipcMain.on('ui:arrange', (_e, sessionId: string, value: unknown) =>
+    store.setArrangement(sessionId, value)
+  )
 
   /*
    * A terminal that ended while no main process was running to see it. The two that matter are the

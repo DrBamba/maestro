@@ -209,3 +209,16 @@ test('restoring the default layout puts every tab back in one pane', async ({ wi
   // And the button that did it is gone, because there is nothing left to put back.
   await expect(restore).toHaveCount(0)
 })
+
+test('an arrangement survives quitting the app', async ({ window, relaunch }) => {
+  await createSession(window, 'kept layout')
+  await dragTab(window, 'editor', await edgeOf(window, 0, 'right'))
+  await expect(window.locator('.board__frame')).toHaveCount(2)
+  // The store writes on a short debounce; quitting flushes it either way.
+  const next = await relaunch()
+
+  const frames = next.locator('.board__frame')
+  await expect(frames).toHaveCount(2, { timeout: 20_000 })
+  await expect(frames.nth(1).locator('.tab[data-tab-key="editor"]')).toHaveCount(1)
+  await expect(frames.nth(0).locator('.tab[data-tab-key="claude"]')).toHaveCount(1)
+})

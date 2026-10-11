@@ -1,7 +1,16 @@
 import { useState } from 'react'
-import type { AgentState, AgentStatus, Repo, Session, TestProgress, UpdateStatus } from '@shared/types'
+import type {
+  AgentState,
+  AgentStatus,
+  BranchSync,
+  Repo,
+  Session,
+  TestProgress,
+  UpdateStatus
+} from '@shared/types'
 import { isLocal } from '@shared/types'
 import { relativeTime } from '../lib/format'
+import { SyncMark, isLanded } from './Landing'
 
 /*
  * Phrased as what the session wants from the reader, not as what happened to it. "Done" was the
@@ -183,6 +192,7 @@ interface GroupBodyProps {
    */
   groupByFolder?: boolean
   agentStates: Record<string, AgentStatus>
+  syncs: Record<string, BranchSync>
   unseenSet: Set<string>
   activeId: string | null
   now: number
@@ -211,6 +221,7 @@ function GroupBody({
   emptyText,
   groupByFolder = false,
   agentStates,
+  syncs,
   unseenSet,
   activeId,
   now,
@@ -227,12 +238,13 @@ function GroupBody({
     const status = agentStates[session.id]
     const state = status?.state ?? 'idle'
     const dormant = isDormant(session, state, now)
+    const sync = syncs[session.id]
     return (
       // A div, not a button: the row holds its own action buttons, and a button
       // cannot legally contain buttons.
       <div
         key={session.id}
-        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}`}
+        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}${isLanded(sync) ? ' is-landed' : ''}`}
         role="button"
         tabIndex={0}
         onClick={() => onSelect(session.id)}
@@ -252,6 +264,7 @@ function GroupBody({
         <span className="session-row__name" data-tip={session.name}>
           {session.name}
         </span>
+        <SyncMark sync={sync} />
         <span className="session-row__time">{relativeTime(session.lastActivity, now)}</span>
         {/* Hidden until hover, except on sleeping rows where they are the point. */}
         <span className="session-row__actions">
@@ -401,6 +414,7 @@ interface SidebarProps {
   repos: Repo[]
   sessions: Session[]
   agentStates: Record<string, AgentStatus>
+  syncs: Record<string, BranchSync>
   unseen: string[]
   /** Marks a non-stable instance, so two open windows are tellable apart. */
   profile: 'stable' | 'dev' | 'custom'
@@ -429,105 +443,126 @@ interface SidebarProps {
   onOpenAbout: () => void
   update: UpdateStatus
   onUpdate: () => void
+  onUpdateCancel: () => void
   onUpdateLog: () => void
 }
 
 const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
-  build: 'Building update…',
-  test: 'Testing update…',
-  publish: 'Installing update…'
+  build: 'Building…',
+  test: 'Testing…',
+  publish: 'Installing…'
 }
 
-function timeLeft(seconds: number | null): string {
-  if (seconds === null) return ''
-  if (seconds < 60) return ' · under a minute left'
-  return ` · about ${Math.round(seconds / 60)} min left`
+function testing(tests: TestProgress): string {
+  const left = tests.leftSeconds
+  const eta = left === null ? '' : left < 60 ? ' · <1 min' : ` · ~${Math.round(left / 60)} min`
+  return `Testing ${tests.done}/${tests.total}${eta}`
 }
 
-function TestBar({ tests }: { tests: TestProgress }): React.JSX.Element {
-  return (
-    <>
-      <div
-        className="sidebar__progress"
-        role="progressbar"
-        aria-label="Update tests"
-        aria-valuemin={0}
-        aria-valuemax={tests.total}
-        aria-valuenow={tests.done}
-      >
-        <div style={{ width: `${(100 * tests.done) / Math.max(1, tests.total)}%` }} />
-      </div>
-      <div className="sidebar__update-note">
-        {tests.done} of {tests.total} tests{timeLeft(tests.leftSeconds)}
-      </div>
-    </>
-  )
-}
-
-/** Only there when there is something newer than what is running. Nothing updates until pressed. */
+/** One row above the footer, and only when there is something newer. Nothing updates until pressed. */
 function UpdateBar({
   update,
   onUpdate,
+  onUpdateCancel,
   onUpdateLog
 }: {
   update: UpdateStatus
   onUpdate: () => void
+  onUpdateCancel: () => void
   onUpdateLog: () => void
 }): React.JSX.Element | null {
+  if (update.state === 'none') return null
+
+  const log = (
+    <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
+      <i className="ph ph-file-text" style={{ fontSize: 15 }} />
+    </button>
+  )
+
   switch (update.state) {
-    case 'none':
-      return null
     case 'available':
     case 'ready':
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
-            <i className="ph ph-arrow-circle-up" style={{ fontSize: 15 }} />
-            Update Maestro
+          <button
+            className="btn btn--small btn--update"
+            onClick={onUpdate}
+            aria-label="Update Maestro"
+            data-tip={update.subject}
+          >
+            <i className="ph ph-arrow-circle-up" style={{ fontSize: 14 }} />
+            Update
           </button>
           {update.state === 'available' && (
-            <div className="sidebar__update-note">
-              {update.changes === 1 ? '1 change' : `${update.changes} changes`} on main
-            </div>
+            <span className="sidebar__update-note">
+              {update.changes === 1 ? '1 change' : `${update.changes} changes`}
+            </span>
           )}
         </div>
       )
     case 'building':
-    case 'applying':
+    case 'applying': {
+      const tests = update.state === 'building' ? update.tests : undefined
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block" disabled>
-            <span className="spinner" />
-            {update.state === 'applying' ? 'Updating…' : BUILD_STEP[update.step]}
-          </button>
-          <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
-            <i className="ph ph-file-text" style={{ fontSize: 16 }} />
-          </button>
-          {update.state === 'building' && update.tests && <TestBar tests={update.tests} />}
+          <span className="spinner" />
+          <span className="sidebar__update-note">
+            {update.state === 'applying'
+              ? 'Updating…'
+              : tests
+                ? testing(tests)
+                : BUILD_STEP[update.step]}
+          </span>
+          {update.state === 'building' && update.step !== 'publish' && (
+            <button
+              className="icon-btn-bare"
+              onClick={onUpdateCancel}
+              aria-label="Cancel update"
+              data-tip="Cancel update"
+            >
+              <i className="ph ph-x" style={{ fontSize: 15 }} />
+            </button>
+          )}
+          {log}
+          {tests && (
+            <div
+              className="sidebar__progress"
+              role="progressbar"
+              aria-label="Update tests"
+              aria-valuemin={0}
+              aria-valuemax={tests.total}
+              aria-valuenow={tests.done}
+            >
+              <div style={{ width: `${(100 * tests.done) / Math.max(1, tests.total)}%` }} />
+            </div>
+          )}
         </div>
       )
+    }
     case 'failed':
       return (
-        <div className="sidebar__update sidebar__update--failed">
-          <div className="sidebar__update-note">{update.message}</div>
-          <div className="sidebar__update-row">
-            <button className="btn btn--block btn--small" onClick={onUpdate}>
-              Retry update
-            </button>
-            <button className="btn btn--small" onClick={onUpdateLog}>
-              Log
-            </button>
-          </div>
+        <div className="sidebar__update">
+          <span className="sidebar__update-note is-bad" data-tip={update.message}>
+            {update.message}
+          </span>
+          <button className="btn btn--small" onClick={onUpdate} aria-label="Retry update">
+            Retry
+          </button>
+          {log}
         </div>
       )
     case 'restart':
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
-            <i className="ph ph-arrow-clockwise" style={{ fontSize: 15 }} />
+          <button
+            className="btn btn--small btn--update"
+            onClick={onUpdate}
+            aria-label="Restart to update"
+            data-tip="Claude sessions restart"
+          >
+            <i className="ph ph-arrow-clockwise" style={{ fontSize: 14 }} />
             Restart to update
           </button>
-          <div className="sidebar__update-note">This update restarts Claude sessions</div>
         </div>
       )
   }
@@ -537,6 +572,7 @@ export default function Sidebar({
   repos,
   sessions,
   agentStates,
+  syncs,
   unseen,
   profile,
   sourceLabel,
@@ -560,11 +596,13 @@ export default function Sidebar({
   onOpenAbout,
   update,
   onUpdate,
+  onUpdateCancel,
   onUpdateLog
 }: SidebarProps): React.JSX.Element {
   const unseenSet = new Set(unseen)
   const rowProps = {
     agentStates,
+    syncs,
     unseenSet,
     activeId,
     now,
@@ -757,7 +795,12 @@ export default function Sidebar({
         })}
       </div>
 
-      <UpdateBar update={update} onUpdate={onUpdate} onUpdateLog={onUpdateLog} />
+      <UpdateBar
+        update={update}
+        onUpdate={onUpdate}
+        onUpdateCancel={onUpdateCancel}
+        onUpdateLog={onUpdateLog}
+      />
 
       <div className="sidebar__foot">
         {/* Sessions are created from a repo's own +, or Cmd+N — this slot adds repos. */}

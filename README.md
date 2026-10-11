@@ -144,7 +144,8 @@ update that landed there is offered here too.
 
 Nothing is applied until the button is pressed. A failed build says whether it failed to build or
 failed its tests, and offers the log and a retry. `npm run release` is the same pipeline from a
-terminal (`--quick` runs only the live-update tests); what it publishes also waits for the button.
+terminal (`--quick` runs only the live-update tests, `--no-tests` none — what **Skip tests when
+updating** in Settings passes); what it publishes also waits for the button.
 
 The rules that keep it unbroken:
 

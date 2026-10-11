@@ -9,6 +9,7 @@ import TabBoard, { type BoardTab } from './TabBoard'
 import {
   activateTab,
   activeTabs,
+  allTabs,
   groupOf,
   groupsOf,
   insertTab,
@@ -20,6 +21,7 @@ import {
   type LayoutNode
 } from '../lib/layout'
 import { aheadBehind, filesChanged, homeRelative } from '../lib/format'
+import { LandingChip } from './Landing'
 import { useShortcuts } from '../lib/shortcuts'
 
 /**
@@ -70,6 +72,30 @@ export function sessionStashKey(sessionId: string): string {
 }
 
 /**
+ * The part of a session's window state that survives a quit: where the panes are and what the
+ * consoles are called. The terminals in them are gone by then, so nothing about them is kept.
+ */
+export interface SessionArrangement {
+  layout: LayoutNode
+  focusKey: string
+  consoles: { key: string; label: string }[]
+  consoleKeys: number
+}
+
+/** A window state for a session whose terminals all died with the last run of the app. */
+function fromArrangement(saved: SessionArrangement): SessionWindowState {
+  return {
+    layout: saved.layout,
+    focusKey: saved.focusKey,
+    consoles: saved.consoles.map((c) => ({ ...c, started: false })),
+    consoleKeys: saved.consoleKeys,
+    scriptTabs: [],
+    runningScripts: [],
+    setupRan: false
+  }
+}
+
+/**
  * The stashed state, minus the tabs that have nothing left to show. A script tab whose terminal is
  * gone would run its script again on mount; a console's only costs a fresh shell when it is opened.
  */
@@ -83,7 +109,7 @@ function restoreWindowState(
   const scriptTabs = saved.scriptTabs.filter((tab) => isHeld(tab.key))
   const kept = new Set(['claude', 'editor', ...saved.consoles.map((c) => c.key), ...scriptTabs.map((t) => t.key)])
   let layout = saved.layout
-  for (const key of saved.scriptTabs.map((t) => t.key)) {
+  for (const key of allTabs(layout)) {
     if (!kept.has(key)) layout = removeTab(layout, key)
   }
   if (!groupOf(layout, 'claude')) layout = makeGroup([...kept], 'claude')
@@ -137,6 +163,9 @@ interface SessionViewProps {
   heldTerminals: ReadonlySet<string>
   /** What the previous window stashed about this session, if there was one. */
   restored?: SessionWindowState
+  /** How the session was arranged when the app last quit, for when there is no stash to go on. */
+  arranged?: SessionArrangement
+  onArrange: (sessionId: string, arrangement: SessionArrangement) => void
   onClaudePty: (sessionId: string, ptyId: string) => void
   onEditorHandle: (sessionId: string, handle: EditorHandle | null) => void
   onStatus: (sessionId: string, status: GitStatus | null) => void
@@ -158,13 +187,21 @@ export default function SessionView({
   onNotice,
   heldTerminals,
   restored,
+  arranged,
+  onArrange,
   onClaudePty,
   onEditorHandle,
   onStatus
 }: SessionViewProps): React.JSX.Element {
   const [status, setStatus] = useState<GitStatus | null>(null)
   // Read once, on mount: a window puts itself back together from this and then carries on.
-  const [initial] = useState(() => restoreWindowState(session.id, restored, heldTerminals))
+  const [initial] = useState(() =>
+    restoreWindowState(
+      session.id,
+      restored ?? (arranged ? fromArrangement(arranged) : undefined),
+      heldTerminals
+    )
+  )
   const [scriptTabs, setScriptTabs] = useState<ScriptTab[]>(initial?.scriptTabs ?? [])
   const [runningScripts, setRunningScripts] = useState<string[]>(initial?.runningScripts ?? [])
 
@@ -343,8 +380,9 @@ export default function SessionView({
    * everything waiting on the script, not the output: a five-minute install nobody can see is worse
    * than one in a tab they can switch away from.
    */
-  // A window put back together already had its setup tab, if the script was ever run.
-  const setupStarted = useRef(initial !== undefined)
+  // A window put back together already had its setup tab, if the script was ever run. A cold start
+  // has no such window: a setup quit midway is `pending` again and runs anew.
+  const setupStarted = useRef(restored !== undefined)
   useEffect(() => {
     if (setupStarted.current) return
     if (session.setupState !== 'pending') return
@@ -679,6 +717,15 @@ export default function SessionView({
     }
     window.maestro.ui.stash(sessionStashKey(session.id), state)
   }, [session.id, layout, focusKey, consoles, scriptTabs, runningScripts, setupRan])
+  useEffect(() => {
+    const arrangement: SessionArrangement = {
+      layout,
+      focusKey,
+      consoles: consoles.map((c) => ({ key: c.key, label: c.label })),
+      consoleKeys: consoleKeys.current
+    }
+    onArrange(session.id, arrangement)
+  }, [session.id, layout, focusKey, consoles, onArrange])
   useEffect(() => () => window.maestro.ui.stash(sessionStashKey(session.id), null), [session.id])
 
   const boardTabs: BoardTab[] = [
@@ -820,10 +867,12 @@ export default function SessionView({
                 {session.branch}
               </span>
             )}
-            {status && (
+            {/* Once anything has landed, where it went and what came after is what is left. */}
+            {status?.landing && <LandingChip landing={status.landing} />}
+            {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{aheadBehind(status.ahead, status.behind)}</span>
             )}
-            {status && (
+            {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{filesChanged(status.files.length)}</span>
             )}
           </div>

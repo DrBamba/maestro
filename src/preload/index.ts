@@ -14,6 +14,7 @@ import type {
   RelocatePlan,
   RelocateResult,
   Commit,
+  BranchSync,
   GitStatus,
   MergeInput,
   MergeResult,
@@ -52,6 +53,8 @@ export interface Snapshot {
   heldTerminals: string[]
   /** What the last window stashed about itself, keyed by what it stashed it under. */
   windowState: Record<string, unknown>
+  /** How each session's tabs were last arranged, by session id. Survives a quit, unlike the stash. */
+  arrangements: Record<string, unknown>
 }
 
 /** A terminal handed to a tab. `replay` and `exit` are set when it was already running before. */
@@ -196,6 +199,7 @@ const api = {
   git: {
     status: (sessionId: string): Promise<GitStatus | null> =>
       ipcRenderer.invoke('git:status', sessionId),
+    sync: (): Promise<Record<string, BranchSync>> => ipcRenderer.invoke('git:sync'),
     commits: (sessionId: string): Promise<Commit[]> => ipcRenderer.invoke('git:commits', sessionId),
     remote: (sessionId: string): Promise<string | null> =>
       ipcRenderer.invoke('git:remote', sessionId),
@@ -254,6 +258,9 @@ const api = {
   ui: {
     /** Remembers something about this window for the next one; null forgets it. */
     stash: (key: string, value: unknown): void => ipcRenderer.send('ui:stash', key, value),
+    /** Remembers how a session's tabs are arranged, across quits; null forgets it. */
+    arrange: (sessionId: string, value: unknown): void =>
+      ipcRenderer.send('ui:arrange', sessionId, value),
     /** A dialog is open. An update waits for it to close rather than reloading under it. */
     busy: (busy: boolean): void => ipcRenderer.send('ui:busy', busy)
   },
@@ -271,6 +278,8 @@ const api = {
     onStatus: (cb: (status: UpdateStatus) => void) => subscribe<UpdateStatus>('update:status', cb),
     /** Does whatever the button currently offers: build and apply, apply, or restart. */
     press: (): void => ipcRenderer.send('update:press'),
+    /** Stops a build before it publishes. */
+    cancel: (): void => ipcRenderer.send('update:cancel'),
     openLog: (): void => ipcRenderer.send('update:log')
   }
 }

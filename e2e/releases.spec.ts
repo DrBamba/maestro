@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test, expect } from './fixtures'
@@ -69,7 +70,7 @@ async function publish(
 const marker = (html: string): string =>
   html.replace('<head>', '<head><meta name="maestro-test-release" content="yes">')
 
-const updateButton = (window: Page) => window.locator('.sidebar__update .btn:has-text("Update Maestro")')
+const updateButton = (window: Page) => window.locator('[aria-label="Update Maestro"]')
 
 async function hasMarker(window: Page): Promise<boolean> {
   return window.evaluate(() => !!document.querySelector('meta[name="maestro-test-release"]'))
@@ -180,7 +181,7 @@ test('a release that needs a new terminal host offers a restart instead', async 
   const stamp = JSON.parse(await readFile(stampFile, 'utf8'))
   await writeFile(stampFile, JSON.stringify({ ...stamp, hostProtocol: stamp.hostProtocol + 1 }))
 
-  const restart = window.locator('.sidebar__update .btn:has-text("Restart to update")')
+  const restart = window.locator('[aria-label="Restart to update"]')
   await expect(restart).toBeVisible({ timeout: 20_000 })
   await expect(updateButton(window)).toHaveCount(0)
   await restart.click()
@@ -198,19 +199,29 @@ test('a release that needs a new terminal host offers a restart instead', async 
  */
 const RELEASE_STUB = `
 import { cpSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { join } from 'node:path'
 const releases = join(process.env.MAESTRO_USER_DATA_DIR, 'releases')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 console.log('$ npm run typecheck')
 await sleep(800)
-console.log('$ npx playwright test')
-console.log('Running 4 tests using 2 workers')
-await sleep(300)
-console.log('  ✓   1 e2e/a.spec.ts:1:1 › one (0.3s)')
-console.log('  ✓   2 e2e/a.spec.ts:2:1 › two (0.3s)')
+const testing = !process.argv.includes('--no-tests')
+if (testing) {
+  console.log('$ npx playwright test')
+  console.log('Running 4 tests using 2 workers')
+  await sleep(300)
+  console.log('  ✓   1 e2e/a.spec.ts:1:1 › one (0.3s)')
+  console.log('  ✓   2 e2e/a.spec.ts:2:1 › two (0.3s)')
+}
+const mode = readFileSync('stub-mode', 'utf8').trim()
+if (testing && mode === 'slow') {
+  // A test run that outlives the script unless its whole group is stopped.
+  const runner = spawn('sleep', ['60'])
+  writeFileSync('runner-pid', String(runner.pid))
+  await new Promise((resolve) => runner.on('exit', resolve))
+}
 await sleep(2000)
-if (readFileSync('stub-mode', 'utf8').trim() === 'fail') {
+if (testing && mode === 'fail') {
   console.error('\\nrelease: npx playwright test failed')
   process.exit(1)
 }
@@ -247,6 +258,15 @@ async function scratchRepo(profileDir: string): Promise<{ repo: string; commit: 
   return { repo, git, commit }
 }
 
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function hasBuilt(window: Page): Promise<boolean> {
   return window.evaluate(() => !!document.querySelector('meta[name="maestro-built"]'))
 }
@@ -274,11 +294,12 @@ test('new commits on main are offered, and the button builds, tests and applies 
 
   scratch.commit('a new button')
   await expect(updateButton(window)).toBeVisible({ timeout: 20_000 })
-  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
 
   await updateButton(window).click()
-  await expect(window.locator('.sidebar__update')).toContainText('Testing update…', { timeout: 10_000 })
-  await expect(window.locator('.sidebar__update-note')).toHaveText(/^2 of 4 tests · under a minute left$/)
+  await expect(window.locator('.sidebar__update-note')).toHaveText(/^Testing 2\/4 · <1 min$/, {
+    timeout: 10_000
+  })
   await expect(window.getByRole('progressbar', { name: 'Update tests' })).toHaveAttribute('aria-valuenow', '2')
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
   await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
@@ -292,15 +313,51 @@ test('a build that fails its tests says so and can be retried', async ({ window,
   scratch.commit('a broken button')
 
   await updateButton(window).click()
-  const bar = window.locator('.sidebar__update--failed')
-  await expect(bar).toContainText('Tests failed on main', { timeout: 20_000 })
+  const bar = window.locator('.sidebar__update')
+  await expect(bar).toContainText('Tests failed on main.', { timeout: 20_000 })
   // Stays up rather than being replaced by the next check.
   await window.waitForTimeout(2000)
   await expect(bar).toBeVisible()
   expect(await hasBuilt(window)).toBe(false)
 
   await writeFile(join(scratch.repo, 'stub-mode'), 'pass')
-  await bar.locator('.btn:has-text("Retry update")').click()
+  await bar.locator('[aria-label="Retry update"]').click()
+  await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
+})
+
+test('a build can be cancelled, and the update is offered again', async ({ window, profileDir }) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+  await writeFile(join(scratch.repo, 'stub-mode'), 'slow')
+  scratch.commit('a slow button')
+
+  await updateButton(window).click()
+  const bar = window.locator('.sidebar__update')
+  await expect(bar).toContainText('Testing', { timeout: 10_000 })
+  const pidFile = join(scratch.repo, 'runner-pid')
+  await expect.poll(() => existsSync(pidFile), { timeout: 10_000 }).toBe(true)
+  const runner = Number(readFileSync(pidFile, 'utf8'))
+
+  await bar.getByRole('button', { name: 'Cancel update' }).click()
+  await expect(updateButton(window)).toBeVisible({ timeout: 10_000 })
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
+  await expect.poll(() => isAlive(runner), { timeout: 5_000 }).toBe(false)
+  await window.waitForTimeout(2000)
+  expect(await hasBuilt(window)).toBe(false)
+  await expect(window.locator('[aria-label="Retry update"]')).toHaveCount(0)
+})
+
+test('with tests skipped in settings, the button only builds main', async ({ window, profileDir }) => {
+  const scratch = await runFromScratchRepo(window, profileDir)
+  // Would fail if tested: skipping them is what lets it through.
+  await writeFile(join(scratch.repo, 'stub-mode'), 'fail')
+  scratch.commit('trusted main')
+
+  await window.click('[aria-label="Settings"]')
+  await window.click('[aria-label="Skip tests when updating"]')
+  await window.keyboard.press('Escape')
+
+  await updateButton(window).click()
+  await expect(window.locator('.sidebar__update')).toContainText('Building…', { timeout: 10_000 })
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
 })
 
@@ -353,7 +410,7 @@ test('with the setting on, a commit pushed to the remote is offered here', async
   await window.keyboard.press('Escape')
 
   await expect(updateButton(window)).toBeVisible({ timeout: 30_000 })
-  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
   // Fast-forwarded rather than left behind, so the build and the repo agree on what main is.
   expect(scratch.git('rev-parse', 'main')).toBe(there('rev-parse', 'HEAD'))
 })
