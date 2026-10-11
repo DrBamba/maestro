@@ -426,18 +426,19 @@ interface SidebarProps {
   onDelete: (id: string) => void
   onRename: (id: string) => void
   onOpenSettings: () => void
+  onOpenAbout: () => void
   update: UpdateStatus
   onUpdate: () => void
   onUpdateLog: () => void
 }
 
 const BUILD_STEP: Record<'build' | 'test' | 'publish', string> = {
-  build: 'Building update…',
-  test: 'Testing update…',
-  publish: 'Installing update…'
+  build: 'Building…',
+  test: 'Testing…',
+  publish: 'Installing…'
 }
 
-/** Only there when there is something newer than what is running. Nothing updates until pressed. */
+/** One row above the footer, and only when there is something newer. Nothing updates until pressed. */
 function UpdateBar({
   update,
   onUpdate,
@@ -447,21 +448,32 @@ function UpdateBar({
   onUpdate: () => void
   onUpdateLog: () => void
 }): React.JSX.Element | null {
+  if (update.state === 'none') return null
+
+  const log = (
+    <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
+      <i className="ph ph-file-text" style={{ fontSize: 15 }} />
+    </button>
+  )
+
   switch (update.state) {
-    case 'none':
-      return null
     case 'available':
     case 'ready':
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
-            <i className="ph ph-arrow-circle-up" style={{ fontSize: 15 }} />
-            Update Maestro
+          <button
+            className="btn btn--small btn--update"
+            onClick={onUpdate}
+            aria-label="Update Maestro"
+            data-tip={update.subject}
+          >
+            <i className="ph ph-arrow-circle-up" style={{ fontSize: 14 }} />
+            Update
           </button>
           {update.state === 'available' && (
-            <div className="sidebar__update-note">
-              {update.changes === 1 ? '1 change' : `${update.changes} changes`} on main
-            </div>
+            <span className="sidebar__update-note">
+              {update.changes === 1 ? '1 change' : `${update.changes} changes`}
+            </span>
           )}
         </div>
       )
@@ -469,37 +481,37 @@ function UpdateBar({
     case 'applying':
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block" disabled>
-            <span className="spinner" />
+          <span className="spinner" />
+          <span className="sidebar__update-note">
             {update.state === 'applying' ? 'Updating…' : BUILD_STEP[update.step]}
-          </button>
-          <button className="icon-btn-bare" onClick={onUpdateLog} aria-label="Update log" data-tip="Log">
-            <i className="ph ph-file-text" style={{ fontSize: 16 }} />
-          </button>
+          </span>
+          {log}
         </div>
       )
     case 'failed':
       return (
-        <div className="sidebar__update sidebar__update--failed">
-          <div className="sidebar__update-note">{update.message}</div>
-          <div className="sidebar__update-row">
-            <button className="btn btn--block btn--small" onClick={onUpdate}>
-              Retry update
-            </button>
-            <button className="btn btn--small" onClick={onUpdateLog}>
-              Log
-            </button>
-          </div>
+        <div className="sidebar__update">
+          <span className="sidebar__update-note is-bad" data-tip={update.message}>
+            {update.message}
+          </span>
+          <button className="btn btn--small" onClick={onUpdate} aria-label="Retry update">
+            Retry
+          </button>
+          {log}
         </div>
       )
     case 'restart':
       return (
         <div className="sidebar__update">
-          <button className="btn btn--block btn--update" onClick={onUpdate} data-tip={update.subject}>
-            <i className="ph ph-arrow-clockwise" style={{ fontSize: 15 }} />
+          <button
+            className="btn btn--small btn--update"
+            onClick={onUpdate}
+            aria-label="Restart to update"
+            data-tip="Claude sessions restart"
+          >
+            <i className="ph ph-arrow-clockwise" style={{ fontSize: 14 }} />
             Restart to update
           </button>
-          <div className="sidebar__update-note">This update restarts Claude sessions</div>
         </div>
       )
   }
@@ -529,6 +541,7 @@ export default function Sidebar({
   onDelete,
   onRename,
   onOpenSettings,
+  onOpenAbout,
   update,
   onUpdate,
   onUpdateLog
@@ -738,6 +751,9 @@ export default function Sidebar({
         </button>
         <button className="icon-btn-bare" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           <i className="ph ph-gear" style={{ fontSize: 18 }} />
+        </button>
+        <button className="icon-btn-bare" onClick={onOpenAbout} aria-label="About" title="About">
+          <i className="ph ph-info" style={{ fontSize: 18 }} />
         </button>
       </div>
     </aside>

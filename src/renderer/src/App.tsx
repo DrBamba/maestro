@@ -31,6 +31,7 @@ import RenameDialog from './components/RenameDialog'
 import RemoveRepoDialog from './components/RemoveRepoDialog'
 import DeleteFolderDialog from './components/DeleteFolderDialog'
 import SettingsDialog from './components/SettingsDialog'
+import AboutDialog from './components/AboutDialog'
 import Tooltip from './components/Tooltip'
 import type { EditorHandle } from './components/EditorPane'
 import type { ThemeName } from '@shared/theme'
@@ -51,6 +52,7 @@ type Overlay =
   | 'removeRepo'
   | 'deleteFolder'
   | 'settings'
+  | 'about'
   | null
 
 /**
@@ -78,6 +80,7 @@ export default function App(): React.JSX.Element {
   const [unseen, setUnseen] = useState<string[]>([])
   const [home, setHome] = useState('')
   const [localRoot, setLocalRoot] = useState('')
+  const [worktreeRoot, setWorktreeRoot] = useState('')
   const [profile, setProfile] = useState<'stable' | 'dev' | 'custom'>('stable')
   const [sourceLabel, setSourceLabel] = useState('')
   const [ghAvailable, setGhAvailable] = useState(false)
@@ -147,6 +150,7 @@ export default function App(): React.JSX.Element {
       setAppStartedAt(snapshot.appStartedAt)
       setHome(snapshot.home)
       setLocalRoot(snapshot.localRoot)
+      setWorktreeRoot(snapshot.worktreeRoot)
       heldTerminals.current = new Set(snapshot.heldTerminals)
       windowState.current = snapshot.windowState
       arrangements.current = snapshot.arrangements
@@ -838,6 +842,7 @@ export default function App(): React.JSX.Element {
         onDelete={(id) => openDispose(id, 'delete')}
         onRename={openRename}
         onOpenSettings={() => setOverlay('settings')}
+        onOpenAbout={() => setOverlay('about')}
         update={update}
         onUpdate={() => window.maestro.update.press()}
         onUpdateLog={() => window.maestro.update.openLog()}
@@ -936,6 +941,17 @@ export default function App(): React.JSX.Element {
           onAutoMode={(on) => void updatePreferences({ permissionMode: on ? 'auto' : undefined })}
           onClose={() => setOverlay(null)}
           onCreate={createLocalSession}
+        />
+      )}
+
+      {overlay === 'about' && (
+        <AboutDialog
+          profile={profile}
+          sourceLabel={sourceLabel}
+          worktreeRoot={worktreeRoot}
+          localRoot={localRoot}
+          home={home}
+          onClose={() => setOverlay(null)}
         />
       )}
 
