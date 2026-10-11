@@ -383,6 +383,24 @@ export interface Commit {
   subject: string
 }
 
+/** Some of a session's work is on the base branch — merged there by Maestro, Claude or anyone. */
+export interface Landing {
+  /** `remote` once it is on origin's base branch; `local` while only the local one has it. */
+  where: 'remote' | 'local'
+  /** The ref it landed on — `origin/main` or `main` — for saying so. */
+  ref: string
+  /** Commits on the branch since that the base does not have yet. */
+  commitsAfter: number
+  /** Uncommitted files in the worktree. */
+  filesAfter: number
+}
+
+/** The sidebar's view of a session's branch: how far ahead it is, or where it landed. */
+export interface BranchSync {
+  ahead: number
+  landing: Landing | null
+}
+
 export interface GitStatus {
   branch: string
   ahead: number
@@ -390,6 +408,7 @@ export interface GitStatus {
   files: ChangedFile[]
   insertions: number
   deletions: number
+  landing: Landing | null
 }
 
 /** One of Claude Code's stored conversations for a worktree. */

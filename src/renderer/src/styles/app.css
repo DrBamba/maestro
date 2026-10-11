@@ -417,6 +417,52 @@ select {
   color: var(--color-neutral-700);
 }
 
+/*
+ * Where a row's branch stands: commits ahead while unmerged, a merge glyph once any of it landed.
+ * Green is pushed and amber is not. The accent counts what came after: it still has to land.
+ */
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font: 500 11.5px var(--font-body);
+  color: var(--color-neutral-600);
+}
+
+.sync i {
+  font-size: 13px;
+}
+
+.sync .sync__small {
+  font-size: 11px;
+}
+
+.sync.is-remote {
+  color: var(--diff-add);
+}
+
+.sync.is-local {
+  color: var(--status-pending);
+}
+
+.sync__after {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent-400);
+}
+
+/* All of it on origin and nothing since: finished, so it steps back like a sleeping row. */
+.session-row.is-landed:not(.is-active) .session-row__name {
+  color: var(--color-neutral-600);
+}
+
+/* The hover actions need the room; the header says the same thing. */
+.session-row:hover .sync,
+.session-row:focus-within .sync {
+  display: none;
+}
+
 /* Row actions — revealed on hover or focus, and always shown on a sleeping row, where the
    suggestion to clean it up is the whole point. */
 .session-row__actions {
@@ -916,6 +962,37 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.landing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.landing-chip i {
+  font-size: 13px;
+}
+
+.landing-chip.is-remote {
+  color: var(--diff-add);
+  background: color-mix(in srgb, var(--diff-add) 12%, transparent);
+}
+
+.landing-chip.is-local {
+  color: var(--status-pending);
+  background: color-mix(in srgb, var(--status-pending) 12%, transparent);
+}
+
+.landing-chip__after {
+  color: var(--color-accent-300);
+  border-left: 1px solid var(--color-divider);
+  padding-left: 7px;
+  margin-left: 1px;
 }
 
 .session__meta-item i {

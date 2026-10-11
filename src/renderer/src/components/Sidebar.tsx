@@ -1,7 +1,15 @@
 import { useState } from 'react'
-import type { AgentState, AgentStatus, Repo, Session, UpdateStatus } from '@shared/types'
+import type {
+  AgentState,
+  AgentStatus,
+  BranchSync,
+  Repo,
+  Session,
+  UpdateStatus
+} from '@shared/types'
 import { isLocal } from '@shared/types'
 import { relativeTime } from '../lib/format'
+import { SyncMark, isLanded } from './Landing'
 
 /*
  * Phrased as what the session wants from the reader, not as what happened to it. "Done" was the
@@ -183,6 +191,7 @@ interface GroupBodyProps {
    */
   groupByFolder?: boolean
   agentStates: Record<string, AgentStatus>
+  syncs: Record<string, BranchSync>
   unseenSet: Set<string>
   activeId: string | null
   now: number
@@ -211,6 +220,7 @@ function GroupBody({
   emptyText,
   groupByFolder = false,
   agentStates,
+  syncs,
   unseenSet,
   activeId,
   now,
@@ -227,12 +237,13 @@ function GroupBody({
     const status = agentStates[session.id]
     const state = status?.state ?? 'idle'
     const dormant = isDormant(session, state, now)
+    const sync = syncs[session.id]
     return (
       // A div, not a button: the row holds its own action buttons, and a button
       // cannot legally contain buttons.
       <div
         key={session.id}
-        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}`}
+        className={`session-row${nested ? ' session-row--nested' : ''}${session.id === activeId ? ' is-active' : ''}${dormant ? ' is-dormant' : ''}${isLanded(sync) ? ' is-landed' : ''}`}
         role="button"
         tabIndex={0}
         onClick={() => onSelect(session.id)}
@@ -252,6 +263,7 @@ function GroupBody({
         <span className="session-row__name" data-tip={session.name}>
           {session.name}
         </span>
+        <SyncMark sync={sync} />
         <span className="session-row__time">{relativeTime(session.lastActivity, now)}</span>
         {/* Hidden until hover, except on sleeping rows where they are the point. */}
         <span className="session-row__actions">
@@ -401,6 +413,7 @@ interface SidebarProps {
   repos: Repo[]
   sessions: Session[]
   agentStates: Record<string, AgentStatus>
+  syncs: Record<string, BranchSync>
   unseen: string[]
   /** Marks a non-stable instance, so two open windows are tellable apart. */
   profile: 'stable' | 'dev' | 'custom'
@@ -534,6 +547,7 @@ export default function Sidebar({
   repos,
   sessions,
   agentStates,
+  syncs,
   unseen,
   profile,
   sourceLabel,
@@ -563,6 +577,7 @@ export default function Sidebar({
   const unseenSet = new Set(unseen)
   const rowProps = {
     agentStates,
+    syncs,
     unseenSet,
     activeId,
     now,

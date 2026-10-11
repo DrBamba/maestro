@@ -21,6 +21,7 @@ import {
   type LayoutNode
 } from '../lib/layout'
 import { aheadBehind, filesChanged, homeRelative } from '../lib/format'
+import { LandingChip } from './Landing'
 import { useShortcuts } from '../lib/shortcuts'
 
 /**
@@ -866,10 +867,12 @@ export default function SessionView({
                 {session.branch}
               </span>
             )}
-            {status && (
+            {/* Once anything has landed, where it went and what came after is what is left. */}
+            {status?.landing && <LandingChip landing={status.landing} />}
+            {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{aheadBehind(status.ahead, status.behind)}</span>
             )}
-            {status && (
+            {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{filesChanged(status.files.length)}</span>
             )}
           </div>

@@ -10,6 +10,7 @@ import type {
   ImportableWorktree,
   LaunchSettings,
   Commit,
+  BranchSync,
   GitStatus,
   MergeInput,
   MergeResult,
@@ -22,6 +23,7 @@ import type {
   Session,
   StartMode
 } from '@shared/types'
+import { isLocal } from '@shared/types'
 import { platformOf } from '@shared/platform'
 import { THEMES, type ThemeName } from '@shared/theme'
 import { onSystemThemeChange, resolvedTheme, syncNativeTheme } from './theme'
@@ -614,6 +616,29 @@ export function registerIpc(): void {
     } catch {
       return null
     }
+  })
+
+  // Every listed repo session at once, for the sidebar: only the active one is polled for status.
+  ipcMain.handle('git:sync', async (): Promise<Record<string, BranchSync>> => {
+    const entries = await Promise.all(
+      store.sessions
+        .filter((session) => !session.archived && !isLocal(session))
+        .map(async (session) => {
+          const repo = store.repo(session.repoId)
+          if (!repo) return null
+          try {
+            const sync = await git.branchSync(
+              session.worktreePath,
+              session.branch,
+              repo.defaultBranch
+            )
+            return [session.id, sync] as const
+          } catch {
+            return null
+          }
+        })
+    )
+    return Object.fromEntries(entries.filter((entry) => entry !== null))
   })
 
   ipcMain.handle('git:commits', async (_e, sessionId: string): Promise<Commit[]> => {

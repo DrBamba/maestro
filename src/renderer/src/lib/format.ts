@@ -31,3 +31,18 @@ export function defaultPrTitle(sessionName: string): string {
   if (!trimmed) return 'Update'
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
 }
+
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
+/** "2 commits · 3 files since", or '' when nothing has happened on the branch since it landed. */
+export function sinceLanding(commits: number, files: number): string {
+  const parts = [commits && count(commits, 'commit'), files && count(files, 'file')].filter(Boolean)
+  return parts.length ? `${parts.join(' · ')} since` : ''
+}
+
+/** Where a landing went, in the words the header chip and the row tooltip share. */
+export function landedOn(where: 'remote' | 'local', ref: string): string {
+  return where === 'remote' ? `On ${ref}` : `Merged into ${ref} · not pushed`
+}

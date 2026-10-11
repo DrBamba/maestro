@@ -14,6 +14,7 @@ import type {
   RelocatePlan,
   RelocateResult,
   Commit,
+  BranchSync,
   GitStatus,
   MergeInput,
   MergeResult,
@@ -198,6 +199,7 @@ const api = {
   git: {
     status: (sessionId: string): Promise<GitStatus | null> =>
       ipcRenderer.invoke('git:status', sessionId),
+    sync: (): Promise<Record<string, BranchSync>> => ipcRenderer.invoke('git:sync'),
     commits: (sessionId: string): Promise<Commit[]> => ipcRenderer.invoke('git:commits', sessionId),
     remote: (sessionId: string): Promise<string | null> =>
       ipcRenderer.invoke('git:remote', sessionId),

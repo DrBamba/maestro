@@ -3,10 +3,12 @@ import { promisify } from 'node:util'
 import { readFile, stat } from 'node:fs/promises'
 import { join, basename, dirname } from 'node:path'
 import type {
+  BranchSync,
   ChangeKind,
   ChangedFile,
   Commit,
   GitStatus,
+  Landing,
   MergeMode,
   PrStatus,
   CheckState
@@ -531,8 +533,93 @@ export async function status(worktreePath: string, baseBranch: string): Promise<
     behind,
     files: list,
     insertions: list.reduce((sum, f) => sum + f.insertions, 0),
-    deletions: list.reduce((sum, f) => sum + f.deletions, 0)
+    deletions: list.reduce((sum, f) => sum + f.deletions, 0),
+    landing: await landing(worktreePath, branch, baseBranch)
   }
+}
+
+/**
+ * Reflog entries that put a commit of the branch's own at its tip. What is left out is every way
+ * the branch can come to point at somebody else's commit: being created, renamed, reset, or
+ * fast-forwarded onto the base. Counting those would call a branch landed that never was.
+ */
+const OWN_TIP =
+  /^(commit|cherry-pick|revert)\b|^(rebase|pull)\b.*\(finish\)|^(merge|pull)\b.*Merge made/
+
+/**
+ * How far past the base branch a session's branch is, or where its work landed.
+ *
+ * The reflog rather than ancestry: a branch rebased onto main or with main merged in has main's
+ * commits in its history, and those are on main without the session's work being there. A tip the
+ * branch itself committed is the session's own, and once one is on the base, the work landed.
+ */
+export async function branchSync(
+  worktreePath: string,
+  branch: string,
+  baseBranch: string
+): Promise<BranchSync> {
+  const counts = await gitOrNull(worktreePath, [
+    'rev-list',
+    '--count',
+    `${baseBranch}..refs/heads/${branch}`
+  ])
+  return {
+    ahead: Number(counts?.trim()) || 0,
+    landing: await landing(worktreePath, branch, baseBranch)
+  }
+}
+
+async function landing(
+  worktreePath: string,
+  branch: string,
+  baseBranch: string
+): Promise<Landing | null> {
+  const log = await gitOrNull(worktreePath, [
+    'reflog',
+    'show',
+    '--format=%H %gs',
+    `refs/heads/${branch}`,
+    '--'
+  ])
+  if (!log) return null
+  const entries = log.split('\n').filter(Boolean)
+  const tips = new Set(
+    entries
+      .map((line) => [line.slice(0, line.indexOf(' ')), line.slice(line.indexOf(' ') + 1)])
+      // A rebase with nothing of its own to replay finishes on the commit it went onto.
+      .filter(([hash, message]) => OWN_TIP.test(message) && !message.endsWith(`onto ${hash}`))
+      .map(([hash]) => hash)
+  )
+  if (tips.size === 0) return null
+  // The oldest entry is where the branch began, so the base's commits from before it are skipped.
+  const start = entries[entries.length - 1].slice(0, 40)
+
+  for (const [where, ref] of [
+    ['remote', `origin/${baseBranch}`],
+    ['local', baseBranch]
+  ] as const) {
+    const onBase = await gitOrNull(worktreePath, [
+      'rev-list',
+      '--max-count=5000',
+      ref,
+      `^${start}`,
+      '--'
+    ])
+    if (!onBase?.split('\n').some((hash) => tips.has(hash))) continue
+    const after = await gitOrNull(worktreePath, [
+      'rev-list',
+      '--count',
+      '--no-merges',
+      `${ref}..refs/heads/${branch}`
+    ])
+    return {
+      where,
+      ref,
+      commitsAfter: Number(after?.trim()) || 0,
+      filesAfter: await dirtyCount(worktreePath)
+    }
+  }
+  return null
 }
 
 export async function recentCommits(worktreePath: string, limit: number): Promise<Commit[]> {

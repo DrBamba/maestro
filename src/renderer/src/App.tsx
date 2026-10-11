@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLocal } from '@shared/types'
 import type {
   AgentStatus,
+  BranchSync,
   DisposeAction,
   DisposeOptions,
   RemoveRepoOptions,
@@ -71,6 +72,8 @@ function digitHint(order: Session[], id: string): string | undefined {
 const OPENED_KEY = 'app:opened'
 /** Set by main just before an update replaces the window, to the release's commit subject. */
 const UPDATED_KEY = 'app:updated'
+/** How often every session's branch is checked for the sidebar; the active one is polled faster. */
+const SYNC_POLL_MS = 20_000
 
 export default function App(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([])
@@ -111,6 +114,7 @@ export default function App(): React.JSX.Element {
   const restoredWindow = useRef(false)
   const [localCollapsed, setLocalCollapsed] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, GitStatus | null>>({})
+  const [syncs, setSyncs] = useState<Record<string, BranchSync>>({})
   const [remote, setRemote] = useState<string | null>(null)
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -242,6 +246,23 @@ export default function App(): React.JSX.Element {
     void window.maestro.git.remote(activeId).then(setRemote)
   }, [activeId])
 
+  /*
+   * Every session's branch, for the sidebar's marks. Merges happen in terminals and on GitHub as
+   * often as through Maestro, so this asks git rather than remembering what Maestro did. Focus is
+   * when a push from elsewhere most likely just happened.
+   */
+  const branches = sessions.map((s) => `${s.id}:${s.branch}:${s.archived}`).join()
+  useEffect(() => {
+    const refresh = (): void => void window.maestro.git.sync().then(setSyncs)
+    refresh()
+    const timer = setInterval(refresh, SYNC_POLL_MS)
+    window.addEventListener('focus', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [branches])
+
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeId) ?? null,
     [sessions, activeId]
@@ -251,6 +272,14 @@ export default function App(): React.JSX.Element {
     [repos, activeSession]
   )
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
+  // The active session's status is polled far more often, so its row follows that.
+  const rowSyncs = useMemo(
+    () =>
+      activeId && activeStatus
+        ? { ...syncs, [activeId]: { ahead: activeStatus.ahead, landing: activeStatus.landing } }
+        : syncs,
+    [syncs, activeId, activeStatus]
+  )
   const disposeSubject = useMemo(
     () => sessions.find((s) => s.id === disposeTarget) ?? null,
     [sessions, disposeTarget]
@@ -819,6 +848,7 @@ export default function App(): React.JSX.Element {
         repos={repos}
         sessions={sessions}
         agentStates={agentStates}
+        syncs={rowSyncs}
         unseen={unseen}
         profile={profile}
         sourceLabel={sourceLabel}
