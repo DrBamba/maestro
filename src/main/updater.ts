@@ -330,7 +330,7 @@ class Updater {
       if (code === 0) return void this.refresh()
       const message =
         said ||
-        (step === 'test' ? 'Tests failed on main. See the log.' : 'main did not build. See the log.')
+        (step === 'test' ? 'Tests failed on main.' : 'main did not build.')
       void this.ahead().then((ahead) => fail(message, ahead?.commit ?? this.aheadAt))
     })
   }

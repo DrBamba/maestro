@@ -67,7 +67,7 @@ async function publish(
 const marker = (html: string): string =>
   html.replace('<head>', '<head><meta name="maestro-test-release" content="yes">')
 
-const updateButton = (window: Page) => window.locator('.sidebar__update .btn:has-text("Update Maestro")')
+const updateButton = (window: Page) => window.locator('[aria-label="Update Maestro"]')
 
 async function hasMarker(window: Page): Promise<boolean> {
   return window.evaluate(() => !!document.querySelector('meta[name="maestro-test-release"]'))
@@ -178,7 +178,7 @@ test('a release that needs a new terminal host offers a restart instead', async 
   const stamp = JSON.parse(await readFile(stampFile, 'utf8'))
   await writeFile(stampFile, JSON.stringify({ ...stamp, hostProtocol: stamp.hostProtocol + 1 }))
 
-  const restart = window.locator('.sidebar__update .btn:has-text("Restart to update")')
+  const restart = window.locator('[aria-label="Restart to update"]')
   await expect(restart).toBeVisible({ timeout: 20_000 })
   await expect(updateButton(window)).toHaveCount(0)
   await restart.click()
@@ -268,10 +268,10 @@ test('new commits on main are offered, and the button builds, tests and applies 
 
   scratch.commit('a new button')
   await expect(updateButton(window)).toBeVisible({ timeout: 20_000 })
-  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
 
   await updateButton(window).click()
-  await expect(window.locator('.sidebar__update')).toContainText('Testing update…', { timeout: 10_000 })
+  await expect(window.locator('.sidebar__update')).toContainText('Testing…', { timeout: 10_000 })
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
   await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
   await expect(window.locator('.toast')).toContainText('built by the button')
@@ -284,15 +284,15 @@ test('a build that fails its tests says so and can be retried', async ({ window,
   scratch.commit('a broken button')
 
   await updateButton(window).click()
-  const bar = window.locator('.sidebar__update--failed')
-  await expect(bar).toContainText('Tests failed on main', { timeout: 20_000 })
+  const bar = window.locator('.sidebar__update')
+  await expect(bar).toContainText('Tests failed on main.', { timeout: 20_000 })
   // Stays up rather than being replaced by the next check.
   await window.waitForTimeout(2000)
   await expect(bar).toBeVisible()
   expect(await hasBuilt(window)).toBe(false)
 
   await writeFile(join(scratch.repo, 'stub-mode'), 'pass')
-  await bar.locator('.btn:has-text("Retry update")').click()
+  await bar.locator('[aria-label="Retry update"]').click()
   await expect.poll(() => hasBuilt(window).catch(() => false), { timeout: 30_000 }).toBe(true)
 })
 
@@ -345,7 +345,7 @@ test('with the setting on, a commit pushed to the remote is offered here', async
   await window.keyboard.press('Escape')
 
   await expect(updateButton(window)).toBeVisible({ timeout: 30_000 })
-  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change on main')
+  await expect(window.locator('.sidebar__update-note')).toHaveText('1 change')
   // Fast-forwarded rather than left behind, so the build and the repo agree on what main is.
   expect(scratch.git('rev-parse', 'main')).toBe(there('rev-parse', 'HEAD'))
 })
