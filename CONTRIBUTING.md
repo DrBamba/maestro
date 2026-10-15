@@ -38,7 +38,7 @@ If you touched Linux behaviour, `npm run e2e:linux` runs the suite in an Ubuntu 
 - Add or update an e2e test for behaviour you changed.
 - Keep the surrounding style: comment density, naming, and the copy rules in `CLAUDE.md`.
 
-Only the maintainer merges. Reviews are best-effort and may take a while. A PR that isn't
+Only the maintainer merges. Reviews are best-effort. A PR that isn't
 merged is not a judgement on you, and you are always free to keep it in your fork.
 
 ## License

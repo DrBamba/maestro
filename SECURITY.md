@@ -9,8 +9,7 @@ Report it privately through
 [GitHub's vulnerability reporting](https://github.com/DrBamba/maestro/security/advisories/new).
 Please don't open a public issue.
 
-Include what you found, how to reproduce it, and what an attacker could do with it. This is a
-spare-time project, so expect a reply within a couple of weeks, not hours.
+Include what you found, how to reproduce it, and what an attacker could do with it.
 
 ## Supported versions
 
