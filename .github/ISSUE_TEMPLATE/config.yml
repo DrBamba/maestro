@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/DrBamba/maestro/discussions/categories/q-a
+    about: How do I…? Why does…? Ask in Q&A.
+  - name: Share an idea
+    url: https://github.com/DrBamba/maestro/discussions/categories/ideas
+    about: Not ready for a feature request yet? Talk it through in Ideas.
   - name: Report a security problem
     url: https://github.com/DrBamba/maestro/security/advisories/new
     about: Report it privately, not in a public issue.

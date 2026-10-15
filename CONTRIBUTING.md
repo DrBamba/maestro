@@ -9,6 +9,8 @@ actually works.
 - **Anything bigger:** open an issue first and wait for a reply. A new feature, a change in
   behaviour, a refactor, another editor or agent harness. It saves you building something that
   won't be merged.
+- **Questions and loose ideas:** use [Discussions](https://github.com/DrBamba/maestro/discussions),
+  in Q&A or Ideas. Issues are for bugs and agreed work.
 - **Security problems:** never in a public issue. See [SECURITY.md](./SECURITY.md).
 
 Maestro is vibe-coded: most of it was written by Claude Code, and AI-written PRs are welcome too.
