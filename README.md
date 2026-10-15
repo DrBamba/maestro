@@ -6,13 +6,42 @@
 > machine, and don't run it anywhere you would mind something going wrong. See
 > [Security](#security).
 
-A desktop app for running and managing Claude Code agent sessions in parallel. Each session gets
-its own git worktree, its own branch, and a **real Claude Code terminal** — not a chat wrapper.
+A desktop app for running Claude Code sessions in parallel. Each session gets its own git
+worktree, its own branch, a **real Claude Code terminal** and a **full VS Code editor**.
+
+## Why Maestro
+
+**How it started.** Maestro was born after I used more and more concurrent sessions, working on
+more features at once instead of waiting for Claude to finish.
+
+**Why not another app.** I tried other applications, but they did more than I wanted. They used
+their own agent harness or their own code editor, which limited the results, because making each
+of those great is a hard task on its own. So Maestro has:
+
+- **Claude Code itself**, not some other harness on top of the model.
+- **VS Code's editor**, with its git control and views and all the other great powers the editor
+  gives.
+
+In the future, I or someone making a PR may add other editors and agent harnesses. That is meant
+to be fairly easy.
+
+**The greatest feature.** While working on Maestro I discovered that its greatest feature is how
+easily anything can be added, the moment I feel something is missing. For example, I hope to make
+the sessions aware of each other, so they can:
+
+- handle merging and conflicts without me,
+- think about order and implications,
+- and even orchestrate working together on features to accelerate the work.
+
+**Why it's public.** I enjoy Maestro, and I hope others will enjoy it too and donate their
+improvements, so that I and everyone else can enjoy it even more :)
+
+[`PLAN.md`](./PLAN.md) has the original scope and the decisions behind it.
+
+## What you get
 
 - **One worktree per session.** Cut a session from any repo; Maestro makes the branch and the
   worktree, runs the repo's setup script, and starts `claude` in it.
-- **The real terminal and a real editor.** Claude Code runs in a PTY, and code-server supplies a
-  full VS Code beside it.
 - **See every agent at a glance.** The sidebar shows which sessions are working, which are asking
   for you, and which have finished.
 - **Land the work.** Rebase or merge back onto the base branch, or open a PR with `gh`.
@@ -41,7 +70,7 @@ From then on the installed app updates itself from this checkout's `main` — se
 [Updating Maestro while it runs](#updating-maestro-while-it-runs). For a `.deb` or an Intel Mac, see
 [Packaging](#packaging).
 
-## What's in it
+## Local sessions and panes
 
 Above the repos sits **Local**: a folder to work in with no repo behind it, for the things that are
 not a feature branch. Say what you are working on and Maestro makes the folder — under
@@ -57,14 +86,6 @@ pane of its own**. Drop one against the edge of a pane to split it, on another p
 it, and drag the edge between two panes to size them: halves, quarters or any mix, per session. A
 pane keeps whatever is running in it across the move, because rearranging moves rectangles and never
 the panes themselves. The header offers the way back to one pane once there is more than one.
-
-Two deliberate bets, from [`PLAN.md`](./PLAN.md):
-
-1. **The real terminal.** A `claude` PTY rendered with xterm.js. Plan mode, rewind, `/cost`, slash
-   commands, hooks and every future Claude Code feature render natively, with zero integration work.
-2. **A full embedded VS Code.** code-server in a webview supplies editing, search,
-   go-to-definition, linting, the diff editor and the whole git UI. We delegate IDE depth
-   rather than rebuilding it.
 
 ## Running it
 
