@@ -357,8 +357,9 @@ Maestro has had no security review. Some of what it does by design:
 - **Writes into your repos.** It adds `.claude/settings.local.json` hooks to each worktree, and a
   shared-folder rule to `.claude/rules/` in folders with more than one session.
 
-Only add repos you trust. Please report security problems as GitHub issues, without exploit
-details.
+Only add repos you trust. Report security problems privately through
+[GitHub's vulnerability reporting](https://github.com/DrBamba/maestro/security/advisories/new),
+not in a public issue.
 
 ## Contributing
 
