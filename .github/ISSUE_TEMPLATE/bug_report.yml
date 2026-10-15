@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in Maestro doesn't work as it should.
+labels: ["bug", "needs triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How do I reproduce it?
+      placeholder: |
+        1. Add a repo
+        2. Create a session
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Ubuntu 24.04
+        - Ubuntu 22.04
+        - Other Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Installed app, updated with Update Maestro
+        - npm run dev
+        - .deb or AppImage
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Maestro commit
+      description: Run `git rev-parse --short HEAD` in your clone.
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: "`crash.log` from the app's data directory helps for crashes. Remove anything private first."

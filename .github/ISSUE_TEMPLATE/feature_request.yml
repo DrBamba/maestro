@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest something Maestro should do.
+labels: ["enhancement", "needs triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or workflow, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Maestro to do?
+    validations:
+      required: true
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Building it
+      options:
+        - label: I'd like to send a PR for this myself.

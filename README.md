@@ -363,9 +363,9 @@ not in a public issue.
 
 ## Contributing
 
-Issues and pull requests are welcome. [`PLAN.md`](./PLAN.md) explains what Maestro is for and the
-bets it makes; [`CLAUDE.md`](./CLAUDE.md) holds the conventions agents working on it follow,
-including the rules for UI copy. Run `npm run typecheck` and `npm run e2e` before opening a PR.
+Issues and pull requests are welcome. Open an issue before anything bigger than a small fix.
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) has the details, and everyone follows the
+[Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 
