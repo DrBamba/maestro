@@ -115,3 +115,14 @@ export function chordHint(shortcut: Shortcut, mac: boolean): string {
       return `${cmd}${shift}${{ left: '←', right: '→', up: '↑', down: '↓' }[shortcut.toward]}`
   }
 }
+
+/**
+ * Whether a chord is taken from a focused terminal rather than left to it.
+ *
+ * xterm turns a Control chord into bytes for the process and stops the event, so off macOS the
+ * window never hears one unless the terminal is told to let it go. ⌘K and ⌘N stay the terminal's
+ * there: Ctrl+K and Ctrl+N are readline's kill-line and next-history.
+ */
+export function reachesTerminal(shortcut: Shortcut): boolean {
+  return shortcut.kind !== 'palette' && shortcut.kind !== 'new-session'
+}

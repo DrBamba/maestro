@@ -20,8 +20,14 @@ async function createSession(window: Page, name: string, repo = 'demo-api'): Pro
 }
 
 /** The class of whatever currently holds keyboard focus. */
-function activeClass(window: Page): Promise<string> {
-  return window.evaluate(() => document.activeElement?.className ?? '')
+/**
+ * Which tab's pane the keyboard is in. Every xterm's focus target is an identical textarea, so "a
+ * terminal has focus" also passes while the keyboard is still in the pane the drag left.
+ */
+function focusedPane(window: Page): Promise<string | null> {
+  return window.evaluate(
+    () => document.activeElement?.closest('[data-pane-key]')?.getAttribute('data-pane-key') ?? null
+  )
 }
 
 function tab(window: Page, key: string) {
@@ -91,7 +97,7 @@ test('a tab dragged to a pane’s edge splits the session in two', async ({ wind
    * than clicked, and starting only on a click would have left this pane empty — so the assertion
    * is a shell that runs, through the filesystem, since its output only reaches a WebGL canvas.
    */
-  await expect.poll(() => activeClass(window), { timeout: 15_000 }).toContain('xterm-helper-textarea')
+  await expect.poll(() => focusedPane(window), { timeout: 15_000 }).toBe('console-1')
   await window.keyboard.type('echo dragged > dragged.txt')
   await window.keyboard.press('Enter')
   await expect
@@ -112,7 +118,7 @@ test('the pane that moves keeps the process it was running', async ({ window, ag
    * its terminal down and up again — a restart would print a second `ARGS:` line and lose the
    * conversation with it.
    */
-  await expect.poll(() => activeClass(window), { timeout: 15_000 }).toContain('xterm-helper-textarea')
+  await expect.poll(() => focusedPane(window), { timeout: 15_000 }).toBe('claude')
   await window.keyboard.type('still the same claude')
   await window.keyboard.press('Enter')
   await expect.poll(agentLog, { timeout: 15_000 }).toContain('still the same claude')

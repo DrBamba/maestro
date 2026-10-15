@@ -37,14 +37,16 @@ function starts(log: string): number {
 
 /**
  * Publishes `out/` as a release, with its window's page passed through `page` — and, with
- * `changeMain`, a main process that differs too, which cannot be applied by a reload.
+ * `changeMain`, a main process that differs too, which cannot be applied by a reload. `stampFields`
+ * land in the stamp before `current` names it, as `scripts/release.mjs` writes them: the app only
+ * watches the top of the releases directory, and Linux does not report an edit inside a bundle.
  */
 async function publish(
   profileDir: string,
   id: string,
   page: (html: string) => string,
   changeMain = false,
-  source?: { repo: string; commit: string }
+  stampFields?: { repo?: string; commit?: string; hostProtocol?: number }
 ): Promise<void> {
   const releases = join(profileDir, 'releases')
   const bundle = join(releases, id)
@@ -60,7 +62,7 @@ async function publish(
   stamp.builtAt += 60_000
   stamp.hashes.renderer = `changed-${id}`
   if (changeMain) stamp.hashes.main = `changed-${id}`
-  Object.assign(stamp, source ?? { repo: '' })
+  Object.assign(stamp, { repo: '' }, stampFields)
   await writeFile(join(bundle, 'release.json'), JSON.stringify(stamp))
 
   await writeFile(join(releases, 'current.partial'), id)
@@ -176,10 +178,8 @@ test('a release that needs a new terminal host offers a restart instead', async 
   profileDir,
   relaunch
 }) => {
-  await publish(profileDir, '20990101-000000-host', marker)
-  const stampFile = join(profileDir, 'releases', '20990101-000000-host', 'release.json')
-  const stamp = JSON.parse(await readFile(stampFile, 'utf8'))
-  await writeFile(stampFile, JSON.stringify({ ...stamp, hostProtocol: stamp.hostProtocol + 1 }))
+  const { hostProtocol } = JSON.parse(await readFile(join('out', 'release.json'), 'utf8'))
+  await publish(profileDir, '20990101-000000-host', marker, false, { hostProtocol: hostProtocol + 1 })
 
   const restart = window.locator('[aria-label="Restart to update"]')
   await expect(restart).toBeVisible({ timeout: 20_000 })
@@ -388,7 +388,7 @@ test('with the setting on, a commit pushed to the remote is offered here', async
 
   // A remote, and somewhere else that pushes to it.
   const origin = join(profileDir, 'origin.git')
-  execFileSync('git', ['init', '-q', '--bare', origin])
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   scratch.git('remote', 'add', 'origin', origin)
   scratch.git('push', '-q', 'origin', 'main')
 

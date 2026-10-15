@@ -5,6 +5,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { THEMES, type ThemeName } from '@shared/theme'
 import { terminalTheme } from '../theme'
+import { matchShortcut, reachesTerminal } from '@shared/shortcuts'
+import { mac } from '../lib/shortcuts'
 import type { PtyAttach } from '../../../preload/index'
 
 /** The theme's dim grey as a 24-bit SGR sequence, for the lines the terminal writes itself. */
@@ -116,6 +118,15 @@ export default function TerminalView({
     term.loadAddon(fit)
     term.loadAddon(new WebLinksAddon())
     term.open(host)
+    // The window's chords go past the terminal to the window's own listener.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return true
+      const shortcut = matchShortcut(
+        { key: e.key, code: e.code, shift: e.shiftKey, meta: e.metaKey, control: e.ctrlKey },
+        mac
+      )
+      return !(shortcut && reachesTerminal(shortcut))
+    })
 
     // WebGL is the fast path (PLAN.md §7); the canvas renderer is a fine fallback.
     try {

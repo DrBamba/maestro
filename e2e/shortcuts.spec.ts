@@ -86,28 +86,33 @@ async function dragTab(window: Page, key: string, to: { x: number; y: number }):
   await window.mouse.up()
 }
 
+/** The bracket chords exist only on macOS: elsewhere `Ctrl+[` is a terminal's Escape. */
+const brackets = process.platform === 'darwin'
+
 async function rightEdgeOf(window: Page, index: number): Promise<{ x: number; y: number }> {
   const box = (await window.locator('main.session:visible .board__frame').nth(index).boundingBox())!
   return { x: box.x + box.width - 8, y: box.y + box.height / 2 }
 }
 
 test('⌘] and ⌘[ walk the tabs of the focused pane, and wrap', async ({ window }) => {
+  test.skip(!brackets, 'bracket chords are macOS-only')
   await createSession(window, 'walk the tabs')
   await expect(tab(window, 'claude')).toHaveClass(/is-on/)
 
-  await window.keyboard.press('Meta+]')
+  await window.keyboard.press('ControlOrMeta+]')
   await expect(tab(window, 'editor')).toHaveClass(/is-on/)
-  await window.keyboard.press('Meta+]')
+  await window.keyboard.press('ControlOrMeta+]')
   await expect(tab(window, 'console-1')).toHaveClass(/is-on/)
 
   // Past the end is the start again: three tabs in a strip is a ring, not a dead end.
-  await window.keyboard.press('Meta+]')
+  await window.keyboard.press('ControlOrMeta+]')
   await expect(tab(window, 'claude')).toHaveClass(/is-on/)
-  await window.keyboard.press('Meta+[')
+  await window.keyboard.press('ControlOrMeta+[')
   await expect(tab(window, 'console-1')).toHaveClass(/is-on/)
 })
 
 test('a tab reached by chord has the keyboard already', async ({ window, agentLog }) => {
+  test.skip(!brackets, 'bracket chords are macOS-only')
   await createSession(window, 'keyboard follows')
   await keyboardIn(window, 'claude')
 
@@ -115,7 +120,7 @@ test('a tab reached by chord has the keyboard already', async ({ window, agentLo
 
   // Onto the console, whose shell starts the first time its tab reaches the screen. What it does
   // with what is typed is the assertion: terminal output only ever reaches a WebGL canvas.
-  await window.keyboard.press('Meta+[')
+  await window.keyboard.press('ControlOrMeta+[')
   await expect(tab(window, 'console-1')).toHaveClass(/is-on/)
   await keyboardIn(window, 'console-1')
   await window.keyboard.type('echo chorded > chorded.txt')
@@ -126,7 +131,7 @@ test('a tab reached by chord has the keyboard already', async ({ window, agentLo
 
   // And back to Claude, which is the same claim in the other direction — the agent, not the shell,
   // receives what is typed next.
-  await window.keyboard.press('Meta+]')
+  await window.keyboard.press('ControlOrMeta+]')
   await expect(tab(window, 'claude')).toHaveClass(/is-on/)
   await keyboardIn(window, 'claude')
   await window.keyboard.type('back on claude')
@@ -135,16 +140,17 @@ test('a tab reached by chord has the keyboard already', async ({ window, agentLo
 })
 
 test('⌘⇧[ and ⌘⇧] step through the sessions in the sidebar', async ({ window }) => {
+  test.skip(!brackets, 'bracket chords are macOS-only')
   await createSession(window, 'first one')
   await createSession(window, 'second one')
   await expect(activeRow(window)).toHaveText('second one')
 
   // Backwards from the second is the first; backwards again wraps to the end of the list.
-  await window.keyboard.press('Meta+Shift+[')
+  await window.keyboard.press('ControlOrMeta+Shift+[')
   await expect(activeRow(window)).toHaveText('first one')
-  await window.keyboard.press('Meta+Shift+[')
+  await window.keyboard.press('ControlOrMeta+Shift+[')
   await expect(activeRow(window)).toHaveText('second one')
-  await window.keyboard.press('Meta+Shift+]')
+  await window.keyboard.press('ControlOrMeta+Shift+]')
   await expect(activeRow(window)).toHaveText('first one')
 })
 
@@ -153,17 +159,17 @@ test('⌘1 and ⌘9 go to a session by position', async ({ window }) => {
   await createSession(window, 'row two')
   await createSession(window, 'row three')
 
-  await window.keyboard.press('Meta+1')
+  await window.keyboard.press('ControlOrMeta+1')
   await expect(activeRow(window)).toHaveText('row one')
-  await window.keyboard.press('Meta+2')
+  await window.keyboard.press('ControlOrMeta+2')
   await expect(activeRow(window)).toHaveText('row two')
 
   // ⌘9 is the last row rather than the ninth, so it keeps working past nine sessions.
-  await window.keyboard.press('Meta+9')
+  await window.keyboard.press('ControlOrMeta+9')
   await expect(activeRow(window)).toHaveText('row three')
 
   // A digit past the end of the list is not a jump to nowhere.
-  await window.keyboard.press('Meta+8')
+  await window.keyboard.press('ControlOrMeta+8')
   await expect(activeRow(window)).toHaveText('row three')
 })
 
@@ -196,12 +202,14 @@ test('the number chords count rows as the sidebar gathers them', async ({ window
     'opened between'
   ])
 
-  await window.keyboard.press('Meta+2')
+  await window.keyboard.press('ControlOrMeta+2')
   await expect(activeRow(window)).toHaveText('second here')
-  await window.keyboard.press('Meta+3')
+  await window.keyboard.press('ControlOrMeta+3')
   await expect(activeRow(window)).toHaveText('opened between')
-  await window.keyboard.press('Meta+Shift+]')
-  await expect(activeRow(window)).toHaveText('first here')
+  if (brackets) {
+    await window.keyboard.press('ControlOrMeta+Shift+]')
+    await expect(activeRow(window)).toHaveText('first here')
+  }
 })
 
 test('⌘⇧A goes to the session that is asking, then says there are no more', async ({
@@ -222,14 +230,14 @@ test('⌘⇧A goes to the session that is asking, then says there are no more', 
   await expect(dotOf(window, 'asking me something')).toHaveClass(/is-attention/)
   await expect(dotOf(window, 'being worked on')).toHaveClass(/is-working/)
 
-  await window.keyboard.press('Meta+Shift+A')
+  await window.keyboard.press('ControlOrMeta+Shift+A')
   await expect(activeRow(window)).toHaveText('asking me something')
 
   /*
    * Pressing again does not land back on the session already on screen. Being looked at is the
    * thing the chord was for, so the queue is empty and it says so rather than doing nothing.
    */
-  await window.keyboard.press('Meta+Shift+A')
+  await window.keyboard.press('ControlOrMeta+Shift+A')
   await expect(window.locator('.toast')).toHaveText('Nothing else waiting on you')
   await expect(activeRow(window)).toHaveText('asking me something')
 
@@ -249,7 +257,7 @@ test('⌘⇧arrows move the keyboard between panes', async ({ window, agentLog }
   // The dragged pane is the one that was just touched, so it is the one holding the keyboard.
   await expect(frames.nth(1)).toHaveClass(/is-focused/)
 
-  await window.keyboard.press('Meta+Shift+ArrowLeft')
+  await window.keyboard.press('ControlOrMeta+Shift+ArrowLeft')
   await expect(frames.nth(0)).toHaveClass(/is-focused/)
   await expect(frames.nth(1)).not.toHaveClass(/is-focused/)
 
@@ -259,12 +267,12 @@ test('⌘⇧arrows move the keyboard between panes', async ({ window, agentLog }
   await window.keyboard.press('Enter')
   await expect.poll(agentLog, { timeout: 15_000 }).toContain('moved left')
 
-  await window.keyboard.press('Meta+Shift+ArrowRight')
+  await window.keyboard.press('ControlOrMeta+Shift+ArrowRight')
   await expect(frames.nth(1)).toHaveClass(/is-focused/)
   await keyboardIn(window, 'console-1')
 
   // Nothing lies that way, so the chord is inert rather than wrapping around to the other side.
-  await window.keyboard.press('Meta+Shift+ArrowRight')
+  await window.keyboard.press('ControlOrMeta+Shift+ArrowRight')
   await expect(frames.nth(1)).toHaveClass(/is-focused/)
   expect(await focusedPane(window)).toBe('console-1')
 })
@@ -368,16 +376,16 @@ test('nothing navigates behind an open dialog', async ({ window }) => {
   await createSession(window, 'the one in front')
   await expect(activeRow(window)).toHaveText('the one in front')
 
-  await window.keyboard.press('Meta+N')
+  await window.keyboard.press('ControlOrMeta+N')
   await expect(window.locator('.modal')).toBeVisible()
 
   // The session name being typed into the dialog is the thing in hand; a digit must not switch the
   // window out from under it.
-  await window.keyboard.press('Meta+1')
+  await window.keyboard.press('ControlOrMeta+1')
   await expect(window.locator('.modal')).toBeVisible()
   await expect(activeRow(window)).toHaveText('the one in front')
 
   await window.keyboard.press('Escape')
-  await window.keyboard.press('Meta+1')
+  await window.keyboard.press('ControlOrMeta+1')
   await expect(activeRow(window)).toHaveText('stay put')
 })
