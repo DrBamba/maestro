@@ -66,6 +66,9 @@ To install it as an app on an Apple Silicon Mac:
 npm run install-stable   # builds the .dmg and copies Maestro.app into /Applications
 ```
 
+To change Maestro itself, open the app, click **Add repo** and pick this clone. Sessions on it edit
+your local copy. Merge one to `main` and press **Update Maestro** to run it.
+
 From then on the installed app updates itself from this checkout's `main` — see
 [Updating Maestro while it runs](#updating-maestro-while-it-runs). For a `.deb` or an Intel Mac, see
 [Packaging](#packaging).
