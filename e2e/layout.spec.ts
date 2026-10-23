@@ -70,6 +70,44 @@ test('a session opens as one pane holding every tab', async ({ window }) => {
   await expect(window.locator('[aria-label="Restore default layout"]')).toHaveCount(0)
 })
 
+test('the terminal’s last row is never clipped, whatever the window height', async ({
+  window,
+  app
+}) => {
+  await createSession(window, 'every height')
+  // A row is about 16px, so a sweep in 3px steps lands on every remainder at least once.
+  for (let height = 700; height <= 760; height += 3) {
+    const before = await window.evaluate(() => window.innerHeight)
+    await app.evaluate(({ BrowserWindow }, h) => {
+      BrowserWindow.getAllWindows()[0].setSize(1200, h)
+    }, height)
+    await window.waitForFunction((was) => window.innerHeight !== was, before)
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () =>
+            new Promise<number | null>((resolve) =>
+              // Two frames for the ResizeObserver's fit to land.
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  const term = [...document.querySelectorAll<HTMLElement>('.term')].find(
+                    (t) => t.offsetParent !== null
+                  )
+                  const screen = term?.querySelector<HTMLElement>('.xterm-screen')
+                  if (!term || !screen) return resolve(null)
+                  const content =
+                    term.getBoundingClientRect().bottom -
+                    parseFloat(getComputedStyle(term).paddingBottom)
+                  resolve(Math.round(screen.getBoundingClientRect().bottom - content))
+                })
+              )
+            )
+        )
+      )
+      .toBeLessThanOrEqual(0)
+  }
+})
+
 test('a tab dragged to a pane’s edge splits the session in two', async ({ window }) => {
   await createSession(window, 'split it')
   const frames = window.locator('.board__frame')
