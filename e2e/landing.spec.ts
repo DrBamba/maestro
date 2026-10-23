@@ -102,6 +102,29 @@ test('a session that is not open still shows its landing in the sidebar', async 
   await expect(row(window, 'routes cleanup').locator('.sync')).toHaveCount(0)
 })
 
+test('a pushed branch shows it is waiting to be merged', async ({ window, profileDir }) => {
+  await withOrigin(profileDir)
+  await createSession(window, 'rate limit')
+  const session = await sessionNamed(window, 'rate limit')
+  const mark = row(window, 'rate limit').locator('.sync')
+  const chip = window.locator('.session__header .push-chip')
+
+  await commit(session.path, 'limits.py')
+  await expect(mark).toHaveText('1', { timeout: 15_000 })
+  await expect(mark).not.toHaveClass(/is-pushed/)
+  await expect(chip).toHaveCount(0)
+
+  await exec('git', ['push', '-q', '-u', 'origin', session.branch], { cwd: session.path })
+  await expect(mark).toHaveClass(/is-pushed/, { timeout: 15_000 })
+  await expect(chip).toHaveText('Pushed · not merged')
+
+  // A commit after the push is still local, and says so.
+  await commit(session.path, 'burst.py')
+  await expect(chip).toHaveText('1 commit not pushed', { timeout: 15_000 })
+  await expect(mark).not.toHaveClass(/is-pushed/)
+  await expect(mark).toHaveText('2')
+})
+
 test('rebasing onto main is not landing', async ({ window, profileDir }) => {
   const repoPath = await withOrigin(profileDir)
   await createSession(window, 'pagination')

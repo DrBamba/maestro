@@ -21,7 +21,7 @@ import {
   type LayoutNode
 } from '../lib/layout'
 import { aheadBehind, filesChanged, homeRelative } from '../lib/format'
-import { LandingChip } from './Landing'
+import { LandingChip, PushChip } from './Landing'
 import { useShortcuts } from '../lib/shortcuts'
 
 /**
@@ -874,6 +874,9 @@ export default function SessionView({
             )}
             {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{filesChanged(status.files.length)}</span>
+            )}
+            {status && !status.landing && status.ahead > 0 && status.unpushed !== null && (
+              <PushChip unpushed={status.unpushed} />
             )}
           </div>
         </div>

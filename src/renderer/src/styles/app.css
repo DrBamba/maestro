@@ -456,6 +456,11 @@ select {
   color: var(--status-pending);
 }
 
+/* On origin, waiting to be merged. */
+.sync.is-pushed {
+  color: var(--color-accent-400);
+}
+
 .sync__after {
   display: inline-flex;
   align-items: center;
@@ -992,7 +997,8 @@ select {
   white-space: nowrap;
 }
 
-.landing-chip {
+.landing-chip,
+.push-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1002,8 +1008,19 @@ select {
   white-space: nowrap;
 }
 
-.landing-chip i {
+.landing-chip i,
+.push-chip i {
   font-size: 13px;
+}
+
+.push-chip {
+  color: var(--color-neutral-600);
+  background: color-mix(in srgb, var(--color-neutral-600) 12%, transparent);
+}
+
+.push-chip.is-pushed {
+  color: var(--color-accent-400);
+  background: color-mix(in srgb, var(--color-accent-400) 12%, transparent);
 }
 
 .landing-chip.is-remote {

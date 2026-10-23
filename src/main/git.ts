@@ -534,6 +534,7 @@ export async function status(worktreePath: string, baseBranch: string): Promise<
     files: list,
     insertions: list.reduce((sum, f) => sum + f.insertions, 0),
     deletions: list.reduce((sum, f) => sum + f.deletions, 0),
+    unpushed: await unpushed(worktreePath, branch),
     landing: await landing(worktreePath, branch, baseBranch)
   }
 }
@@ -565,8 +566,30 @@ export async function branchSync(
   ])
   return {
     ahead: Number(counts?.trim()) || 0,
+    unpushed: await unpushed(worktreePath, branch),
     landing: await landing(worktreePath, branch, baseBranch)
   }
+}
+
+/**
+ * Commits on the branch that its remote copy lacks, or null when there is no remote copy. The
+ * upstream when one is set, else origin's same-named branch, for a push made without -u.
+ */
+async function unpushed(worktreePath: string, branch: string): Promise<number | null> {
+  const upstream = await gitOrNull(worktreePath, [
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    '--symbolic-full-name',
+    `${branch}@{upstream}`
+  ])
+  const remote = upstream?.trim() || `refs/remotes/origin/${branch}`
+  const counts = await gitOrNull(worktreePath, [
+    'rev-list',
+    '--count',
+    `${remote}..refs/heads/${branch}`
+  ])
+  return counts === null ? null : Number(counts.trim()) || 0
 }
 
 async function landing(

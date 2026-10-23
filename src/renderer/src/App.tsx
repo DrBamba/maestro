@@ -282,7 +282,14 @@ export default function App(): React.JSX.Element {
   const rowSyncs = useMemo(
     () =>
       activeId && activeStatus
-        ? { ...syncs, [activeId]: { ahead: activeStatus.ahead, landing: activeStatus.landing } }
+        ? {
+            ...syncs,
+            [activeId]: {
+              ahead: activeStatus.ahead,
+              unpushed: activeStatus.unpushed,
+              landing: activeStatus.landing
+            }
+          }
         : syncs,
     [syncs, activeId, activeStatus]
   )

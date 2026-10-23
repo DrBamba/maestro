@@ -398,6 +398,8 @@ export interface Landing {
 /** The sidebar's view of a session's branch: how far ahead it is, or where it landed. */
 export interface BranchSync {
   ahead: number
+  /** Commits the branch's remote copy does not have; null when it was never pushed. */
+  unpushed: number | null
   landing: Landing | null
 }
 
@@ -405,6 +407,7 @@ export interface GitStatus {
   branch: string
   ahead: number
   behind: number
+  unpushed: number | null
   files: ChangedFile[]
   insertions: number
   deletions: number

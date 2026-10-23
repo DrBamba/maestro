@@ -2,18 +2,24 @@ import type { BranchSync, Landing } from '@shared/types'
 import { landedOn, sinceLanding } from '../lib/format'
 
 /**
- * A sidebar row's branch, at a glance: commits ahead while it is unmerged, a merge glyph once any
+ * A sidebar row's branch, at a glance: commits ahead while it is unmerged, with a cloud once origin
+ * has all of them, a merge glyph once any
  * of it is on the base — green pushed, amber not — and what has happened on it since, in the
  * accent, because that is the work still left to land.
  */
 export function SyncMark({ sync }: { sync: BranchSync | undefined }): React.JSX.Element | null {
   if (!sync) return null
-  const { ahead, landing } = sync
+  const { ahead, unpushed, landing } = sync
   if (!landing) {
     if (ahead === 0) return null
+    const pushed = unpushed === 0
+    const tip = `${ahead} commit${ahead === 1 ? '' : 's'} ahead`
     return (
-      <span className="sync" data-tip={`${ahead} commit${ahead === 1 ? '' : 's'} ahead`}>
-        <i className="ph ph-arrow-up" />
+      <span
+        className={`sync${pushed ? ' is-pushed' : ''}`}
+        data-tip={unpushed === null ? tip : `${tip} · ${pushState(unpushed)}`}
+      >
+        <i className={`ph ${pushed ? 'ph-cloud-check' : 'ph-arrow-up'}`} />
         {ahead}
       </span>
     )
@@ -56,6 +62,22 @@ export function LandingChip({ landing }: { landing: Landing }): React.JSX.Elemen
       <i className="ph ph-git-merge" />
       {landedOn(landing.where, landing.ref)}
       {since && <span className="landing-chip__after">+{since}</span>}
+    </span>
+  )
+}
+
+/** "Pushed · not merged", or how many commits origin is still missing. */
+export function pushState(unpushed: number): string {
+  if (unpushed === 0) return 'Pushed · not merged'
+  return `${unpushed} commit${unpushed === 1 ? '' : 's'} not pushed`
+}
+
+/** The header's mark for a branch that is on origin but not on the base yet. */
+export function PushChip({ unpushed }: { unpushed: number }): React.JSX.Element {
+  return (
+    <span className={`push-chip${unpushed === 0 ? ' is-pushed' : ''}`}>
+      <i className={`ph ${unpushed === 0 ? 'ph-cloud-check' : 'ph-cloud-arrow-up'}`} />
+      {pushState(unpushed)}
     </span>
   )
 }
