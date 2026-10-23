@@ -104,3 +104,49 @@ test('the editor has its extensions before code-server can scan them', async ({
     `manifest written ${new Date(written).toISOString()}, server started ${new Date(started).toISOString()}`
   ).toBeLessThanOrEqual(started + 1000)
 })
+
+/**
+ * A link the workbench opens — Cmd+click on a URL in its terminal — is a popup from the guest, and
+ * has to land in the browser. code-server's `/proxy/<port>/` rewrite of a localhost link is undone
+ * on the way, so the browser gets the address the terminal printed.
+ */
+test('links opened in the editor go to the browser', async ({ window, app }) => {
+  test.skip(!(await hasCodeServer()), 'code-server is not installed on this machine')
+
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as unknown as { opened: string[] }).opened = opened
+    shell.openExternal = async (url: string) => {
+      opened.push(url)
+    }
+  })
+
+  await window.click('[aria-label="New session in demo-api"]')
+  await window.fill('#session-name', 'editor links')
+  await window.click('.modal__actions .btn--primary')
+  await expect(window.locator('.session-row__name').first()).toHaveText('editor links', {
+    timeout: 30_000
+  })
+  await window.click('.tab:has-text("Editor")')
+  await expect(window.locator('webview')).toHaveCount(1, { timeout: 180_000 })
+
+  const openFromGuest = (url: string): Promise<void> =>
+    app.evaluate(async ({ webContents }, target) => {
+      const guest = webContents.getAllWebContents().find((c) => c.getType() === 'webview')
+      if (!guest) throw new Error('no webview')
+      // A user gesture, as a Cmd+click is; a popup without one is blocked before any handler.
+      await guest.executeJavaScript(`window.open(${JSON.stringify(target)}, '_blank')`, true)
+    }, url)
+  const opened = (): Promise<string[]> =>
+    app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened)
+
+  await expect
+    .poll(async () => {
+      await openFromGuest('https://example.com/docs').catch(() => {})
+      return (await opened()).includes('https://example.com/docs')
+    }, { timeout: 60_000, intervals: [1000] })
+    .toBe(true)
+
+  await openFromGuest('http://127.0.0.1:9/proxy/5173/app?x=1')
+  await expect.poll(opened).toContain('http://localhost:5173/app?x=1')
+})

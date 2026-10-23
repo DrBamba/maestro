@@ -147,6 +147,27 @@ function createWindow(): void {
 }
 
 /**
+ * Where a link opened from the editor should go, or null for one that should go nowhere.
+ *
+ * code-server rewrites `localhost:3000` in a terminal to its own `/proxy/3000/` route. That route
+ * serves the app under a sub-path, which breaks any app with absolute asset paths, so the link is
+ * turned back into the address that was printed.
+ */
+function externalLink(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) return null
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)
+  const proxied = loopback ? /^\/(?:abs)?proxy\/(\d+)(\/.*)?$/.exec(parsed.pathname) : null
+  if (!proxied) return url
+  return `http://localhost:${proxied[1]}${proxied[2] ?? '/'}${parsed.search}${parsed.hash}`
+}
+
+/**
  * The chords that have to work from inside the editor pane.
  *
  * That pane is a `<webview>`, a process of its own, so keys pressed in it never reach the window's
@@ -156,6 +177,13 @@ function createWindow(): void {
  */
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return
+
+  // A link the workbench opens — Cmd+click in its terminal, a hover link — goes to the browser.
+  contents.setWindowOpenHandler(({ url }) => {
+    const target = externalLink(url)
+    if (target) void shell.openExternal(target)
+    return { action: 'deny' }
+  })
 
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return

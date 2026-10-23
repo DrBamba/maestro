@@ -290,8 +290,10 @@ const EditorPane = forwardRef<EditorHandle, EditorPaneProps>(function EditorPane
           src={server.folderUrl}
           // eslint-disable-next-line react/no-unknown-property
           partition="persist:maestro-editor"
+          // Links VS Code opens (a terminal Cmd+click, say) are popups; main sends them to the browser.
+          // A string, because React drops a boolean here and the attribute only counts if present.
           // eslint-disable-next-line react/no-unknown-property
-          allowpopups={false}
+          allowpopups={'true' as unknown as boolean}
         />
       ) : (
         <div className="embed-placeholder">
