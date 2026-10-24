@@ -22,6 +22,16 @@ function monoStack(): string {
   return value || 'ui-monospace, SFMono-Regular, Menlo, monospace'
 }
 
+/** Hands the terminal back to the DOM renderer. Never throws: it runs inside React cleanups. */
+function dropWebgl(ref: React.MutableRefObject<WebglAddon | null>): void {
+  try {
+    ref.current?.dispose()
+  } catch {
+    // Already disposed by a context-loss handler.
+  }
+  ref.current = null
+}
+
 export interface TerminalViewProps {
   /** The resolved ground to draw on. Changing it recolours a terminal that is already running. */
   theme: ThemeName
@@ -128,16 +138,6 @@ export default function TerminalView({
       return !(shortcut && reachesTerminal(shortcut))
     })
 
-    // WebGL is the fast path (PLAN.md §7); the canvas renderer is a fine fallback.
-    try {
-      const webgl = new WebglAddon()
-      webgl.onContextLoss(() => webgl.dispose())
-      term.loadAddon(webgl)
-      webglRef.current = webgl
-    } catch {
-      // No WebGL context available — xterm falls back on its own.
-    }
-
     termRef.current = term
     fitRef.current = fit
 
@@ -192,12 +192,7 @@ export default function TerminalView({
        * session is removed from the list. Nothing removed sessions until archive and delete
        * existed, so this was effectively dead code until then.
        */
-      try {
-        webglRef.current?.dispose()
-      } catch {
-        // Already disposed by a context-loss handler.
-      }
-      webglRef.current = null
+      dropWebgl(webglRef)
       try {
         term.dispose()
       } catch (err) {
@@ -221,6 +216,26 @@ export default function TerminalView({
     const term = termRef.current
     if (term) term.options.theme = terminalTheme(theme)
   }, [theme])
+
+  /*
+   * WebGL is the fast path (PLAN.md §7), but only for a terminal on screen. Chromium keeps about
+   * sixteen contexts and silently drops the oldest beyond that. A reload mounts every open session's
+   * terminals at once, the active session's first, so its Claude was the one dropped and went black.
+   * A hidden terminal draws with xterm's DOM renderer, which costs nothing while nothing is shown.
+   */
+  useEffect(() => {
+    const term = termRef.current
+    if (!term || hidden) return
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => dropWebgl(webglRef))
+      term.loadAddon(webgl)
+      webglRef.current = webgl
+    } catch {
+      // No WebGL context available — the DOM renderer carries on.
+    }
+    return () => dropWebgl(webglRef)
+  }, [hidden])
 
   /**
    * Start, or restart, the process. Runs whenever the parent bumps startToken, so a launcher or a

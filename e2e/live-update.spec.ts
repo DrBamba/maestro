@@ -90,3 +90,31 @@ test('quitting still ends Claude', async ({ window, agentLog, relaunch }) => {
   // A fresh start of the same conversation — a second process, not the first one reattached.
   await expect.poll(async () => starts(await agentLog()), { timeout: 15_000 }).toBe(2)
 })
+
+test('reloading with many sessions open keeps the shown terminal drawn', async ({ window }) => {
+  test.setTimeout(180_000)
+  // More terminals than Chromium keeps WebGL contexts for, which is about sixteen.
+  for (let i = 0; i < 10; i++) {
+    await window.click('[aria-label="New session in demo-api"]')
+    await window.fill('#session-name', `busy ${i}`)
+    await window.click('.modal__actions .btn--primary')
+    await expect(window.locator(`.session-row__name:text-is("busy ${i}")`)).toHaveCount(1, { timeout: 30_000 })
+    await window.click('.session:visible .tab:has-text("Console")')
+    await window.click('.session:visible .tab:has-text("Claude")')
+  }
+  await window.click('.session-row:has-text("busy 3")')
+
+  const lost: string[] = []
+  window.on('console', (message) => {
+    if (/Too many active WebGL contexts|webglcontextlost/.test(message.text())) lost.push(message.text())
+  })
+  await window.reload()
+  await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
+  await expect(window.locator('.session:visible .term:visible')).toHaveCount(1, { timeout: 15_000 })
+  // Long enough for a dropped context to be reported, which xterm waits three seconds to do.
+  await window.waitForTimeout(4000)
+
+  expect(lost).toEqual([])
+  // Only what is on screen holds a context.
+  expect(await window.locator('.xterm canvas').count()).toBeLessThanOrEqual(4)
+})
