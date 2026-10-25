@@ -746,6 +746,22 @@ select {
   color: var(--status-add);
 }
 
+.btn--red {
+  color: var(--status-del);
+  border-color: color-mix(in srgb, var(--status-del) 55%, transparent);
+  background: color-mix(in srgb, var(--status-del) 10%, transparent);
+}
+
+.btn--red:hover {
+  border-color: var(--status-del);
+  background: color-mix(in srgb, var(--status-del) 18%, transparent);
+  color: var(--status-del);
+}
+
+.btn--red i {
+  color: var(--status-del);
+}
+
 .sidebar__empty {
   padding: 18px 12px;
   font-size: 13px;

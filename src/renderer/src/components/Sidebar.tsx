@@ -877,7 +877,7 @@ export default function Sidebar({
 
       <div className="sidebar__foot">
         {/* Sessions are created from a repo's own +, or Cmd+N — this slot adds repos. */}
-        <button className="btn btn--block" onClick={onAddRepo}>
+        <button className="btn btn--block btn--red" onClick={onAddRepo}>
           <i className="ph ph-folder-plus" style={{ fontSize: 15 }} />
           Add repo
         </button>
