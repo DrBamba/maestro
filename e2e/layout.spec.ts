@@ -266,3 +266,25 @@ test('an arrangement survives quitting the app', async ({ window, relaunch }) =>
   await expect(frames.nth(1).locator('.tab[data-tab-key="editor"]')).toHaveCount(1)
   await expect(frames.nth(0).locator('.tab[data-tab-key="claude"]')).toHaveCount(1)
 })
+
+test('a split made after a relaunch holds only the tab dragged into it', async ({
+  window,
+  relaunch
+}) => {
+  await createSession(window, 'split after relaunch')
+  await dragTab(window, 'editor', await edgeOf(window, 0, 'right'))
+  await expect(window.locator('.board__frame')).toHaveCount(2)
+  const next = await relaunch()
+
+  const frames = next.locator('.board__frame')
+  await expect(frames).toHaveCount(2, { timeout: 20_000 })
+  await dragTab(next, 'console-1', await edgeOf(next, 0, 'bottom'))
+  await expect(frames).toHaveCount(3)
+
+  const strips = await frames.evaluateAll((els) =>
+    els.map((el) =>
+      [...el.querySelectorAll<HTMLElement>('.tab[data-tab-key]')].map((t) => t.dataset.tabKey)
+    )
+  )
+  expect(strips).toEqual([['claude'], ['console-1'], ['editor']])
+})

@@ -17,6 +17,7 @@ import {
   makeGroup,
   paneToward,
   removeTab,
+  reviveLayout,
   tabGroupIds,
   type LayoutNode
 } from '../lib/layout'
@@ -108,7 +109,7 @@ function restoreWindowState(
   const isHeld = (key: string): boolean => held.has(`${sessionId}:${key}`)
   const scriptTabs = saved.scriptTabs.filter((tab) => isHeld(tab.key))
   const kept = new Set(['claude', 'editor', ...saved.consoles.map((c) => c.key), ...scriptTabs.map((t) => t.key)])
-  let layout = saved.layout
+  let layout = reviveLayout(saved.layout)
   for (const key of allTabs(layout)) {
     if (!kept.has(key)) layout = removeTab(layout, key)
   }

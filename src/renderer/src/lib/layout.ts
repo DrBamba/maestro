@@ -35,10 +35,15 @@ export type LayoutNode = TabGroup | Split
 export type DropZone = 'tabs' | 'center' | 'left' | 'right' | 'top' | 'bottom'
 
 let seq = 0
+/**
+ * Saved layouts keep their ids across a quit or a reload, while the counter starts over — so each
+ * run stamps its own ids, or the next split would mint a `g1` beside the saved `g1`.
+ */
+const run = Math.random().toString(36).slice(2, 8)
 
 function freshId(prefix: string): string {
   seq += 1
-  return `${prefix}${seq}`
+  return `${prefix}${run}.${seq}`
 }
 
 export function makeGroup(tabs: string[], active?: string): TabGroup {
@@ -133,6 +138,24 @@ function normalize(node: LayoutNode): LayoutNode | null {
 
 function settle(node: LayoutNode): LayoutNode {
   return normalize(node) ?? makeGroup([])
+}
+
+/**
+ * A saved tree made fit to use: every node given a fresh id, and a tab found in more than one group
+ * kept only in the first. Layouts saved before ids were unique per run can hold two groups with the
+ * same id, which draws every tab in both panes.
+ */
+export function reviveLayout(node: LayoutNode): LayoutNode {
+  const seen = new Set<string>()
+  const walk = (current: LayoutNode): LayoutNode => {
+    if (current.kind === 'split') {
+      return { ...current, id: freshId('s'), children: current.children.map(walk) }
+    }
+    const tabs = current.tabs.filter((key) => !seen.has(key))
+    for (const key of tabs) seen.add(key)
+    return makeGroup(tabs, current.active)
+  }
+  return settle(walk(node))
 }
 
 /** Shows a tab that is already in the tree. */
