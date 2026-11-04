@@ -742,18 +742,6 @@ select {
   color: var(--status-add);
 }
 
-.btn--red {
-  color: #fff;
-  border-color: #ff1f1f;
-  background: #ff1f1f;
-}
-
-.btn--red:hover {
-  color: #fff;
-  border-color: #ff4545;
-  background: #ff4545;
-}
-
 .btn--update i {
   color: var(--status-add);
 }
