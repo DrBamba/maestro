@@ -1,7 +1,9 @@
 import { test as base, _electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, writeFile, chmod, mkdir, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, writeFile, chmod, mkdir, rm, readFile, cp } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { extensionCacheDir } from './globalSetup'
 
 /**
  * Drives the real application: real main process, real renderer, real IPC.
@@ -21,6 +23,11 @@ interface Fixtures {
   appEnv: Record<string, string>
   /** Extra stand-in binaries for the app's PATH, name → script, set with `test.use({ stubs: … })`. */
   stubs: Record<string, string>
+  /**
+   * Starts the profile with the editor's extensions already installed, from the cache global setup
+   * fills, so a test that only needs a working editor skips the download. Set with `test.use`.
+   */
+  editorExtensions: boolean
   app: ElectronApplication
   window: Page
   /** The throwaway profile directory, for asserting on what the app wrote. */
@@ -121,6 +128,7 @@ done
 export const test = base.extend<Fixtures & { running: Running }>({
   appEnv: [{}, { option: true }],
   stubs: [{}, { option: true }],
+  editorExtensions: [false, { option: true }],
 
   profileDir: async ({}, use) => {
     const dir = await mkdtemp(join(tmpdir(), 'maestro-e2e-'))
@@ -145,7 +153,8 @@ export const test = base.extend<Fixtures & { running: Running }>({
     await use({ app: null })
   },
 
-  app: async ({ profileDir, running, appEnv, stubs }, use) => {
+  app: async ({ profileDir, running, appEnv, stubs, editorExtensions }, use) => {
+    if (editorExtensions) await seedEditorExtensions(profileDir)
     running.app = await launchApp(profileDir, appEnv, stubs)
     await use(running.app)
     // Whichever instance is current, including one a relaunch put there.
@@ -216,4 +225,17 @@ export async function confirmDispose(window: Page): Promise<void> {
   const discard = dialog.locator('.seg__opt:has-text("Discard them")')
   if (await discard.count()) await discard.click()
   await dialog.locator('.modal__actions .btn--primary').click()
+}
+
+/**
+ * Copies the cached extensions into the profile where the app keeps them. The manifest records
+ * absolute paths, so it is rewritten to point at the copy. With no cache, the app downloads them.
+ */
+async function seedEditorExtensions(profileDir: string): Promise<void> {
+  const cache = await extensionCacheDir()
+  if (!cache || !existsSync(join(cache, 'extensions.json'))) return
+  const dest = join(profileDir, 'code-server', 'extensions')
+  await cp(cache, dest, { recursive: true })
+  const manifest = join(dest, 'extensions.json')
+  await writeFile(manifest, (await readFile(manifest, 'utf8')).split(cache).join(dest), 'utf8')
 }
