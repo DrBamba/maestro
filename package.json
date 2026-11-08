@@ -60,6 +60,27 @@
       "notarize": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSDocumentsFolderUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSDesktopFolderUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSDownloadsFolderUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSRemovableVolumesUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSNetworkVolumesUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSFileProviderDomainUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSAppleEventsUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSLocalNetworkUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSContactsUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSCalendarsUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSCalendarsFullAccessUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSRemindersUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSRemindersFullAccessUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSPhotoLibraryUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSCameraUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSMicrophoneUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSAudioCaptureUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSBluetoothAlwaysUsageDescription": "An agent or command in a Maestro terminal asked for this.",
+        "NSBluetoothPeripheralUsageDescription": "An agent or command in a Maestro terminal asked for this."
+      },
       "target": [
         "dmg",
         "zip"
