@@ -26,6 +26,7 @@ import NewSessionDialog from './components/NewSessionDialog'
 import LocalSessionDialog from './components/LocalSessionDialog'
 import MergeDialog from './components/MergeDialog'
 import PrDialog from './components/PrDialog'
+import GithubAccountDialog from './components/GithubAccountDialog'
 import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
 import BulkDisposeDialog from './components/BulkDisposeDialog'
@@ -49,6 +50,7 @@ type Overlay =
   | 'import'
   | 'merge'
   | 'pr'
+  | 'github'
   | 'dispose'
   | 'bulkDispose'
   | 'rename'
@@ -817,6 +819,13 @@ export default function App(): React.JSX.Element {
             label: 'Create pull request',
             run: () => setOverlay('pr')
           },
+          {
+            id: 'github-account',
+            icon: 'ph ph-github-logo',
+            label: 'GitHub account…',
+            hint: 'for this repo',
+            run: () => setOverlay('github')
+          },
           /*
            * Both go to the session, which owns the editor and the setup tab — the same route the run
            * scripts take. Editing writes the script into this worktree if the branch has none, so
@@ -1086,6 +1095,15 @@ export default function App(): React.JSX.Element {
           localRoot={localRoot}
           home={home}
           onClose={() => setOverlay(null)}
+        />
+      )}
+
+      {overlay === 'github' && activeRepo && (
+        <GithubAccountDialog
+          repoId={activeRepo.id}
+          repoName={activeRepo.name}
+          onClose={() => setOverlay(null)}
+          onSaved={(login) => notice(`${activeRepo.name} now uses ${login ?? 'gh’s default account'}`)}
         />
       )}
 

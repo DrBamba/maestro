@@ -288,7 +288,8 @@ export class PtyManager {
     cwd: string,
     label: string,
     cols: number,
-    rows: number
+    rows: number,
+    env?: Record<string, string>
   ): { id: string } {
     return this.spawn({
       sessionId,
@@ -299,7 +300,8 @@ export class PtyManager {
       command: defaultShell(),
       args: ['-l'],
       cols,
-      rows
+      rows,
+      env
     })
   }
 

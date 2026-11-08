@@ -17,6 +17,7 @@ import type {
   PrInput,
   PrResult,
   PrStatus,
+  GithubAccounts,
   Preferences,
   RemoveRepoOptions,
   Repo,
@@ -37,6 +38,7 @@ import { profile, sourceLabel, type Profile } from './profile'
 import { titleWatcher } from './autoTitle'
 import { updater } from './updater'
 import { createSetupScript, setupScriptIn, SETUP_SCRIPT_REL } from './setupScript'
+import { describeAccounts, githubEnv, setRepoAccount } from './githubAccount'
 import {
   addRepo,
   applyGeneratedTitle,
@@ -395,6 +397,16 @@ export function registerIpc(): void {
     const repo = store.repo(id)
     if (!repo) return false
     return git.pathExistsAtRef(repo.path, ref || repo.defaultBranch, SETUP_SCRIPT_REL)
+  })
+
+  ipcMain.handle('repo:githubAccount', async (_e, id: string): Promise<GithubAccounts | null> => {
+    const repo = store.repo(id)
+    return repo ? describeAccounts(repo.path) : null
+  })
+
+  ipcMain.handle('repo:setGithubAccount', async (_e, id: string, login: string | null) => {
+    const repo = store.repo(id)
+    if (repo) await setRepoAccount(repo.path, login)
   })
 
   ipcMain.handle('repo:removePlan', (_e, id: string) => removeRepoPlan(id))
@@ -785,7 +797,8 @@ export function registerIpc(): void {
       // moment the session's real name becomes obtainable. Watching is a no-op once it is named.
       if (session.awaitingTitle) titleWatcher.start(sessionId)
 
-      return launchClaude(session, cols, rows, effective)
+      // Agents push and open PRs too, so they start as the repo's GitHub account.
+      return launchClaude(session, cols, rows, effective, await githubEnv(session.worktreePath))
     }
   )
 
@@ -807,7 +820,10 @@ export function registerIpc(): void {
       const session = requireDirectory(sessionId)
       if (!session) return null
       const slot = `${sessionId}:${tab}`
-      return (await ptys.claim(slot)) ?? ptys.spawnShell(sessionId, slot, session.worktreePath, label, cols, rows)
+      const held = await ptys.claim(slot)
+      if (held) return held
+      const env = await githubEnv(session.worktreePath)
+      return ptys.spawnShell(sessionId, slot, session.worktreePath, label, cols, rows, env)
     }
   )
 
@@ -819,7 +835,8 @@ export function registerIpc(): void {
     if (held) return held
     // Pushed twice, and both matter: once now for `running`, and again when the script exits — that
     // second push is what moves the footer off "setup running" and releases Claude's first turn.
-    const handle = await runSetupScript(ctx.session, slot, cols, rows, pushSessions)
+    const env = await githubEnv(ctx.session.worktreePath)
+    const handle = await runSetupScript(ctx.session, slot, cols, rows, pushSessions, env)
     pushSessions()
     return handle
   })
@@ -842,7 +859,7 @@ export function registerIpc(): void {
         script.command,
         cols,
         rows,
-        { keepOpen: true }
+        { keepOpen: true, env: await githubEnv(ctx.session.worktreePath) }
       )
     }
   )

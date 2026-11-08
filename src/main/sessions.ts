@@ -875,7 +875,8 @@ export function launchClaude(
   session: Session,
   cols: number,
   rows: number,
-  launch: ClaudeLaunch
+  launch: ClaudeLaunch,
+  env: Record<string, string> = {}
 ): { id: string } {
   const args: string[] = []
   if (launch.mode === 'continue') {
@@ -947,7 +948,7 @@ export function launchClaude(
     args,
     cols,
     rows,
-    env: { [STATE_FILE_ENV]: stateFileFor(session.id) },
+    env: { ...env, [STATE_FILE_ENV]: stateFileFor(session.id) },
     // Only a clean exit sends SessionEnd, so the dot needs the process itself to say it has gone.
     onExit: () => agentStates.settle(session.id)
   })
@@ -972,7 +973,8 @@ export async function runSetupScript(
   slot: string,
   cols: number,
   rows: number,
-  onSettled?: () => void
+  onSettled?: () => void,
+  env?: Record<string, string>
 ): Promise<{ id: string } | null> {
   const script = await setupScriptIn(session.worktreePath)
   if (!script) {
@@ -990,6 +992,7 @@ export async function runSetupScript(
     rows,
     {
       keepOpen: false,
+      env,
       onExit: (code) => {
         store.updateSession(session.id, { setupState: code === 0 ? 'ok' : 'failed' })
         onSettled?.()

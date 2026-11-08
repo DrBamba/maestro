@@ -21,6 +21,7 @@ import type {
   PrInput,
   PrResult,
   PrStatus,
+  GithubAccounts,
   Preferences,
   LocalFolderPlan,
   RemoveRepoOptions,
@@ -136,7 +137,13 @@ const api = {
     fetch: (id: string): Promise<boolean> => ipcRenderer.invoke('repo:fetch', id),
     /** Whether a worktree cut from `ref` would carry `.maestro/setup.sh`. */
     setupScriptAt: (id: string, ref: string): Promise<boolean> =>
-      ipcRenderer.invoke('repo:setupScriptAt', id, ref)
+      ipcRenderer.invoke('repo:setupScriptAt', id, ref),
+    /** gh's logged-in accounts, and which one this repo works as. */
+    githubAccount: (id: string): Promise<GithubAccounts | null> =>
+      ipcRenderer.invoke('repo:githubAccount', id),
+    /** Null goes back to gh's active account. */
+    setGithubAccount: (id: string, login: string | null): Promise<void> =>
+      ipcRenderer.invoke('repo:setGithubAccount', id, login)
   },
 
   sessions: {

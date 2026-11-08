@@ -573,6 +573,14 @@ export interface PrInput {
   body: string
 }
 
+/** The GitHub accounts `gh` is logged into, and which one a repo is set to work as. */
+export interface GithubAccounts {
+  /** Null when `gh` is missing or could not answer. */
+  accounts: { login: string; active: boolean }[] | null
+  /** Null means gh's active account. */
+  current: string | null
+}
+
 export interface PrResult {
   ok: boolean
   url: string

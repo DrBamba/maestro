@@ -13,6 +13,7 @@ import type {
   PrStatus,
   CheckState
 } from '@shared/types'
+import { githubEnv } from './githubAccount'
 
 const exec = promisify(execFile)
 
@@ -775,7 +776,9 @@ export function parseRemote(url: string | null): string | null {
 
 async function gh(cwd: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await exec('gh', args, { cwd, maxBuffer: MAX_BUFFER })
+    // As the repo's own GitHub account, when one is set; gh reads no git config to find it.
+    const env = { ...process.env, ...(await githubEnv(cwd)) }
+    const { stdout } = await exec('gh', args, { cwd, env, maxBuffer: MAX_BUFFER })
     return stdout
   } catch (err) {
     const e = err as { stderr?: string; message: string }

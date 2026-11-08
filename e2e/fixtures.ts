@@ -19,6 +19,8 @@ import { join } from 'node:path'
 interface Fixtures {
   /** Extra environment for the app, set per file with `test.use({ appEnv: … })`. */
   appEnv: Record<string, string>
+  /** Extra stand-in binaries for the app's PATH, name → script, set with `test.use({ stubs: … })`. */
+  stubs: Record<string, string>
   app: ElectronApplication
   window: Page
   /** The throwaway profile directory, for asserting on what the app wrote. */
@@ -42,13 +44,16 @@ interface Running {
 
 async function launchApp(
   profileDir: string,
-  appEnv: Record<string, string>
+  appEnv: Record<string, string>,
+  stubs: Record<string, string> = {}
 ): Promise<ElectronApplication> {
   const binDir = join(profileDir, 'stub-bin')
   await mkdir(binDir, { recursive: true })
-  const stub = join(binDir, 'claude')
-  await writeFile(stub, CLAUDE_STUB, 'utf8')
-  await chmod(stub, 0o755)
+  for (const [name, body] of Object.entries({ claude: CLAUDE_STUB, ...stubs })) {
+    const stub = join(binDir, name)
+    await writeFile(stub, body, 'utf8')
+    await chmod(stub, 0o755)
+  }
 
   /*
    * MAESTRO_E2E_EXECUTABLE runs the suite against a packaged app instead of `out/` — the only way to
@@ -98,6 +103,8 @@ const CLAUDE_STUB = `#!/bin/sh
 # Recorded as well as printed: the opening message is passed as an argument, not typed, and the
 # banner only reaches the WebGL canvas where no assertion can see it.
 printf 'ARGS: %s\\n' "$*" >> "$MAESTRO_E2E_LOG"
+# Beside the input log, not in it, so tests asserting on exactly what was typed are unaffected.
+[ -n "$GH_TOKEN" ] && printf 'GH_TOKEN=%s\\n' "$GH_TOKEN" >> "$MAESTRO_E2E_LOG.env"
 if [ -n "$CLAUDE_CONFIG_DIR" ]; then
   history_dir="$CLAUDE_CONFIG_DIR/projects/$(pwd | tr './' '--')"
   mkdir -p "$history_dir"
@@ -113,6 +120,7 @@ done
 
 export const test = base.extend<Fixtures & { running: Running }>({
   appEnv: [{}, { option: true }],
+  stubs: [{}, { option: true }],
 
   profileDir: async ({}, use) => {
     const dir = await mkdtemp(join(tmpdir(), 'maestro-e2e-'))
@@ -137,14 +145,14 @@ export const test = base.extend<Fixtures & { running: Running }>({
     await use({ app: null })
   },
 
-  app: async ({ profileDir, running, appEnv }, use) => {
-    running.app = await launchApp(profileDir, appEnv)
+  app: async ({ profileDir, running, appEnv, stubs }, use) => {
+    running.app = await launchApp(profileDir, appEnv, stubs)
     await use(running.app)
     // Whichever instance is current, including one a relaunch put there.
     await running.app?.close()
   },
 
-  relaunch: async ({ app, profileDir, running, appEnv }, use) => {
+  relaunch: async ({ app, profileDir, running, appEnv, stubs }, use) => {
     /*
      * `kill` ends the process without letting it quit — a crash, or an update replacing it. Nothing
      * gets to shut the terminals down on the way out. `exited` waits for the app to leave by itself,
@@ -164,7 +172,7 @@ export const test = base.extend<Fixtures & { running: Running }>({
       }
       running.app = null
       await between?.()
-      running.app = await launchApp(profileDir, appEnv)
+      running.app = await launchApp(profileDir, appEnv, stubs)
       const window = await running.app.firstWindow()
       await window.waitForSelector('.sidebar__scroll', { timeout: 20_000 })
       return window
