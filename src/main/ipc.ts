@@ -39,6 +39,7 @@ import { titleWatcher } from './autoTitle'
 import { updater } from './updater'
 import { createSetupScript, setupScriptIn, SETUP_SCRIPT_REL } from './setupScript'
 import { describeAccounts, githubEnv, setRepoAccount } from './githubAccount'
+import { claudeUsage } from './claudeUsage'
 import {
   addRepo,
   applyGeneratedTitle,
@@ -933,6 +934,8 @@ export function registerIpc(): void {
       return { ok: false, error: String(err) }
     }
   })
+
+  ipcMain.handle('claude:usage', (_e, force?: boolean) => claudeUsage(force === true))
 
   ipcMain.handle('app:openPath', async (_e, path: string) => {
     const error = await shell.openPath(path)

@@ -22,6 +22,7 @@ import type {
   PrResult,
   PrStatus,
   GithubAccounts,
+  ClaudeUsage,
   Preferences,
   LocalFolderPlan,
   RemoveRepoOptions,
@@ -252,7 +253,9 @@ const api = {
     /** Sessions that finished or asked for input while the user was looking elsewhere. */
     onUnseen: (cb: (ids: string[]) => void) => subscribe<string[]>('agent:unseen', cb),
     conversations: (sessionId: string): Promise<Conversation[]> =>
-      ipcRenderer.invoke('claude:conversations', sessionId)
+      ipcRenderer.invoke('claude:conversations', sessionId),
+    /** Plan limits; cached for a minute unless `force`. */
+    usage: (force?: boolean): Promise<ClaudeUsage> => ipcRenderer.invoke('claude:usage', force)
   },
 
   editor: {

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import UsageRing from './UsageRing'
 import type {
   AgentState,
   AgentStatus,
@@ -881,6 +882,7 @@ export default function Sidebar({
           <i className="ph ph-folder-plus" style={{ fontSize: 15 }} />
           Add repo
         </button>
+        <UsageRing />
         <button className="icon-btn-bare" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           <i className="ph ph-gear" style={{ fontSize: 18 }} />
         </button>

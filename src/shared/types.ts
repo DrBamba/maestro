@@ -574,6 +574,30 @@ export interface PrInput {
 }
 
 /** The GitHub accounts `gh` is logged into, and which one a repo is set to work as. */
+/** One plan limit, as Claude Code's `/usage` shows it. */
+export interface UsageWindow {
+  label: string
+  /** 0–100. */
+  percent: number
+  /** ISO time the window resets, when known. */
+  resetsAt: string | null
+}
+
+/** Claude's plan usage. `at` is when it was read. */
+export type ClaudeUsage =
+  | {
+      ok: true
+      at: number
+      /** `pro`, `max`… from the sign-in, when it says. */
+      plan: string | null
+      windows: UsageWindow[]
+      /** Credits spent past the plan limits, when turned on. Amounts are formatted. */
+      extra: { used: string; limit: string | null; percent: number | null } | null
+      /** Set when the latest refresh failed and these are the last good numbers. */
+      stale?: string
+    }
+  | { ok: false; at: number; error: string }
+
 export interface GithubAccounts {
   /** Null when `gh` is missing or could not answer. */
   accounts: { login: string; active: boolean }[] | null
