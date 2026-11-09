@@ -173,6 +173,36 @@ test('⌘1 and ⌘9 go to a session by position', async ({ window }) => {
   await expect(activeRow(window)).toHaveText('row three')
 })
 
+test('a session reached by chord is scrolled into view in the sidebar', async ({ window }) => {
+  await createSession(window, 'top row')
+  await createSession(window, 'middle row')
+  await createSession(window, 'bottom row')
+
+  // Too short to show every row, which is what a long list is to the window it is in.
+  const list = window.locator('.sidebar__scroll')
+  await list.evaluate((el) => {
+    el.style.flex = 'none'
+    el.style.height = '80px'
+  })
+  const inView = (name: string): Promise<boolean> =>
+    window.evaluate((name) => {
+      const list = document.querySelector('.sidebar__scroll')!.getBoundingClientRect()
+      const row = [...document.querySelectorAll('.session-row')]
+        .find((r) => r.querySelector('.session-row__name')?.textContent === name)!
+        .getBoundingClientRect()
+      return row.top >= list.top - 1 && row.bottom <= list.bottom + 1
+    }, name)
+
+  await window.keyboard.press('ControlOrMeta+1')
+  await expect(activeRow(window)).toHaveText('top row')
+  await expect.poll(() => inView('top row')).toBe(true)
+
+  await window.keyboard.press('ControlOrMeta+9')
+  await expect(activeRow(window)).toHaveText('bottom row')
+  await expect.poll(() => inView('bottom row')).toBe(true)
+  expect(await inView('top row')).toBe(false)
+})
+
 test('the number chords count rows as the sidebar gathers them', async ({ window, profileDir }) => {
   const shared = join(profileDir, 'shared')
   const elsewhere = join(profileDir, 'elsewhere')

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import UsageRing from './UsageRing'
 import type {
   AgentState,
@@ -684,6 +684,15 @@ export default function Sidebar({
     endDrag()
   }
 
+  /*
+   * Whichever way a session became current — a chord, the palette, ⌘⇧A — its row is brought into
+   * view. `nearest` leaves the list alone when the row is already on screen, so a click never jumps.
+   */
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    scrollRef.current?.querySelector('.session-row.is-active')?.scrollIntoView({ block: 'nearest' })
+  }, [activeId])
+
   const localRows = groupRows(sessions, null)
   const localArchived = sessions
     .filter((s) => isLocal(s) && s.archived)
@@ -716,6 +725,7 @@ export default function Sidebar({
       </div>
 
       <div
+        ref={scrollRef}
         className="sidebar__scroll"
         onDragOver={(e) => {
           if (!dragged) return
