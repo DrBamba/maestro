@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { GithubAccounts } from '@shared/types'
+import type { AccountGuess, GithubAccounts } from '@shared/types'
 
 const exec = promisify(execFile)
 
@@ -77,18 +77,18 @@ export async function describeAccounts(cwd: string): Promise<GithubAccounts> {
 /**
  * Sets or clears the repo's account. Only the helpers this module wrote are removed, so a helper
  * someone configured for the repo by hand survives both directions.
+ *
+ * Clearing writes an empty value rather than removing the key: "gh default" is a choice someone
+ * made, and {@link guessRepoAccount} only guesses for a repo where no choice was ever recorded.
  */
 export async function setRepoAccount(repoPath: string, login: string | null): Promise<void> {
   if (login !== null && !LOGIN.test(login)) throw new Error(`Not a GitHub login: ${login}`)
   await gitConfig(repoPath, ['--local', '--unset-all', HELPER_KEY, OURS])
-  if (login === null) {
-    await gitConfig(repoPath, ['--local', '--unset-all', ACCOUNT_KEY])
-    return
-  }
   const set = async (args: string[]): Promise<void> => {
     await exec('git', ['config', '--local', ...args], { cwd: repoPath })
   }
-  await set([ACCOUNT_KEY, login])
+  await set([ACCOUNT_KEY, login ?? ''])
+  if (login === null) return
   // The empty entry resets the helper list, so the keychain's saved login never answers first.
   await set(['--add', HELPER_KEY, ''])
   await set(['--add', HELPER_KEY, helperFor(login)])
@@ -102,11 +102,117 @@ export async function setRepoAccount(repoPath: string, login: string | null): Pr
 export async function githubEnv(cwd: string): Promise<Record<string, string>> {
   const login = await repoAccount(cwd)
   if (!login) return {}
+  const token = await tokenFor(login)
+  return token ? { GH_TOKEN: token } : {}
+}
+
+async function tokenFor(login: string): Promise<string | null> {
   try {
     const { stdout } = await exec('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login])
-    const token = stdout.trim()
-    return token ? { GH_TOKEN: token } : {}
+    return stdout.trim() || null
   } catch {
-    return {}
+    return null
   }
+}
+
+/** `owner` and `name` of a github.com remote, over https or ssh; null for anything else. */
+export function githubRepoOf(url: string): { owner: string; name: string } | null {
+  const match = url
+    .trim()
+    .match(
+      /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/]+)\/([^/]+?)(?:\.git)?\/?$/
+    )
+  return match ? { owner: match[1], name: match[2] } : null
+}
+
+/** Whether GitHub says `login` may push to the repo. Any failure — offline, no access — is a no. */
+async function canPush(login: string, repo: { owner: string; name: string }): Promise<boolean> {
+  const token = await tokenFor(login)
+  if (!token) return false
+  try {
+    const { stdout } = await exec(
+      'gh',
+      ['api', `repos/${repo.owner}/${repo.name}`, '--jq', '.permissions.push'],
+      { env: { ...process.env, GH_TOKEN: token }, timeout: 10_000 }
+    )
+    return stdout.trim() === 'true'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The account a repo cloned outside Maestro most likely belongs to, for a repo where nobody has
+ * picked one — not even "gh default". Git records nothing about who cloned, so it is read off
+ * GitHub instead: the one logged-in account that can push, or of several, the repo's owner.
+ *
+ * Null means there is nothing to decide: a choice is already recorded, the remote is not on
+ * GitHub, or there are fewer than two accounts to choose between.
+ */
+export async function guessRepoAccount(cwd: string): Promise<AccountGuess | null> {
+  if ((await gitConfig(cwd, ['--local', '--get', ACCOUNT_KEY])) !== null) return null
+  let url = ''
+  try {
+    url = (await exec('git', ['remote', 'get-url', 'origin'], { cwd })).stdout
+  } catch {
+    return null
+  }
+  const repo = githubRepoOf(url)
+  if (!repo) return null
+  const logins = (await githubAccounts())?.map((a) => a.login) ?? []
+  if (logins.length === 0) return null
+
+  const pushes = await Promise.all(logins.map((login) => canPush(login, repo)))
+  const pushers = logins.filter((_, i) => pushes[i])
+  if (pushers.length === 1) return { login: pushers[0] }
+  const owner = pushers.find((l) => l.toLowerCase() === repo.owner.toLowerCase())
+  if (owner) return { login: owner }
+  if (logins.length < 2) return null
+  return pushers.length > 1 ? { choose: pushers, why: 'several' } : { choose: logins, why: 'none' }
+}
+
+/** Paths already guessed for this run, so a repo nobody can settle is not asked about per session. */
+const guessed = new Set<string>()
+
+/**
+ * Records the guessed account when it is certain, once per repo per run. Returns what is left to
+ * ask, for the caller that can ask.
+ */
+export async function adoptGuessedAccount(cwd: string): Promise<AccountGuess | null> {
+  if (guessed.has(cwd)) return null
+  guessed.add(cwd)
+  const guess = await guessRepoAccount(cwd)
+  if (guess && 'login' in guess) await setRepoAccount(cwd, guess.login)
+  return guess
+}
+
+/**
+ * The URL `git clone` gets: `owner/name` means GitHub, anything else is passed through as typed —
+ * a URL, an ssh address or a local path.
+ */
+export function cloneUrl(source: string): string {
+  const typed = source.trim()
+  const short = typed.match(/^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?$/)
+  return short ? `https://github.com/${short[1]}/${short[2]}.git` : typed
+}
+
+/** The folder name `git clone` would pick for a source. */
+export function cloneName(source: string): string {
+  return cloneUrl(source)
+    .replace(/[/:]+$/, '')
+    .split(/[/:]/)
+    .pop()!
+    .replace(/\.git$/, '')
+}
+
+/**
+ * Clones as `login`, through the same per-request helper the repo keeps afterwards, so a private
+ * repo is fetched with that account's token instead of whatever the keychain answers first.
+ */
+export async function cloneAs(source: string, dest: string, login: string | null): Promise<void> {
+  if (login !== null && !LOGIN.test(login)) throw new Error(`Not a GitHub login: ${login}`)
+  const helper = login ? ['-c', `${HELPER_KEY}=`, '-c', `${HELPER_KEY}=${helperFor(login)}`] : []
+  await exec('git', [...helper, 'clone', '--', cloneUrl(source), dest], {
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })
 }

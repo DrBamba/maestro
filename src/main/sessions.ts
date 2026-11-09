@@ -28,6 +28,7 @@ import * as git from './git'
 import { agentStates, installHooks, stateFileFor, STATE_FILE_ENV } from './agentState'
 import { ptys } from './pty'
 import { resolveBinary } from './shellEnv'
+import { cloneAs, cloneName, setRepoAccount } from './githubAccount'
 import { profile } from './profile'
 import { randomHandle } from './handles'
 import { newestConversation } from './claudeHistory'
@@ -475,6 +476,30 @@ export async function importWorktree(path: string): Promise<CreateResult> {
   }
   store.addSession(session)
   return { session }
+}
+
+/**
+ * Clones `source` into `parent` as `login` and adds it, the account recorded as the one who cloned
+ * it. Null records "gh default" — still a choice, so adding never asks about it again.
+ */
+export async function cloneRepo(
+  source: string,
+  parent: string,
+  login: string | null
+): Promise<Repo | { error: string }> {
+  if (!source.trim()) return { error: 'Which repository?' }
+  const dest = join(expandHome(parent || '~'), cloneName(source))
+  if (await access(dest).then(() => true, () => false)) return { error: `${dest} already exists.` }
+  try {
+    await mkdir(expandHome(parent || '~'), { recursive: true })
+    await cloneAs(source, dest, login)
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr?.trim()
+    const reason = stderr?.split('\n').filter((l) => l.startsWith('fatal:') || l.startsWith('remote:')).pop()
+    return { error: `Could not clone ${source.trim()}. ${reason ?? (err as Error).message}` }
+  }
+  await setRepoAccount(dest, login)
+  return addRepo(dest)
 }
 
 export async function addRepo(path: string): Promise<Repo | { error: string }> {

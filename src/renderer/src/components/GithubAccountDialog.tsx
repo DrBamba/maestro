@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { GithubAccounts } from '@shared/types'
+import type { AccountGuess, GithubAccounts } from '@shared/types'
 import Modal from './Modal'
 
 interface GithubAccountDialogProps {
   repoId: string
   repoName: string
+  /** Set when a repo was just added and Maestro could not tell its account: only these are offered. */
+  asking?: Extract<AccountGuess, { choose: string[] }>
   onClose: () => void
   onSaved: (login: string | null) => void
 }
@@ -19,6 +21,7 @@ interface GithubAccountDialogProps {
 export default function GithubAccountDialog({
   repoId,
   repoName,
+  asking,
   onClose,
   onSaved
 }: GithubAccountDialogProps): React.JSX.Element {
@@ -33,7 +36,7 @@ export default function GithubAccountDialog({
     })
   }, [repoId])
 
-  const accounts = info?.accounts ?? []
+  const accounts = (info?.accounts ?? []).filter((a) => !asking || asking.choose.includes(a.login))
   const active = accounts.find((a) => a.active)?.login
 
   const save = async (): Promise<void> => {
@@ -88,8 +91,16 @@ export default function GithubAccountDialog({
         </div>
       )}
 
-      {/* Worth saying: agents and terminals already running keep the token they started with. */}
-      <div className="modal__note">Agents and terminals started from now on use it.</div>
+      {asking ? (
+        <div className="modal__note">
+          {asking.why === 'several'
+            ? 'More than one of your accounts can push here. Which should new sessions use?'
+            : 'None of your accounts showed push access. Which should new sessions use?'}
+        </div>
+      ) : (
+        /* Worth saying: agents and terminals already running keep the token they started with. */
+        <div className="modal__note">Agents and terminals started from now on use it.</div>
+      )}
 
       <div className="modal__actions">
         <button className="btn btn--ghost" onClick={onClose}>
@@ -98,7 +109,8 @@ export default function GithubAccountDialog({
         <button
           className="btn btn--primary"
           onClick={() => void save()}
-          disabled={busy || accounts.length === 0 || choice === (info?.current ?? null)}
+          // Asking, "gh default" is an answer worth saving, so it is never asked again.
+          disabled={busy || accounts.length === 0 || (!asking && choice === (info?.current ?? null))}
         >
           <i className="ph ph-check" style={{ fontSize: 15 }} />
           Save

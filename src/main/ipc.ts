@@ -18,6 +18,7 @@ import type {
   PrResult,
   PrStatus,
   GithubAccounts,
+  AccountGuess,
   Preferences,
   RemoveRepoOptions,
   Repo,
@@ -38,10 +39,17 @@ import { profile, sourceLabel, type Profile } from './profile'
 import { titleWatcher } from './autoTitle'
 import { updater } from './updater'
 import { createSetupScript, setupScriptIn, SETUP_SCRIPT_REL } from './setupScript'
-import { describeAccounts, githubEnv, setRepoAccount } from './githubAccount'
+import {
+  adoptGuessedAccount,
+  describeAccounts,
+  githubAccounts,
+  githubEnv,
+  setRepoAccount
+} from './githubAccount'
 import { claudeUsage } from './claudeUsage'
 import {
   addRepo,
+  cloneRepo,
   applyGeneratedTitle,
   archivePlan,
   disposeSession,
@@ -372,7 +380,7 @@ export function registerIpc(): void {
   )
 
   // ── repos ───────────────────────────────────────────────────────────────────
-  ipcMain.handle('repo:add', async (): Promise<{ repo?: Repo; error?: string }> => {
+  ipcMain.handle('repo:add', async (): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> => {
     const result = await dialog.showOpenDialog({
       title: 'Add a repository',
       properties: ['openDirectory', 'createDirectory'],
@@ -383,8 +391,20 @@ export function registerIpc(): void {
     if ('error' in added) return { error: added.error }
     // A removed repo comes back with its sessions.
     pushSessions()
-    return { repo: added }
+    return { repo: added, account: (await adoptGuessedAccount(added.path)) ?? undefined }
   })
+
+  ipcMain.handle(
+    'repo:clone',
+    async (_e, source: string, parent: string, login: string | null): Promise<{ repo?: Repo; error?: string }> => {
+      const added = await cloneRepo(source, parent, login)
+      if ('error' in added) return { error: added.error }
+      pushSessions()
+      return { repo: added }
+    }
+  )
+
+  ipcMain.handle('github:accounts', () => githubAccounts())
 
   ipcMain.handle('repo:update', (_e, id: string, patch: Partial<Repo>) => store.updateRepo(id, patch))
 
@@ -430,6 +450,9 @@ export function registerIpc(): void {
       mode?: StartMode,
       launch?: LaunchSettings
     ) => {
+      // A repo added before accounts were guessed gets its guess here, ahead of the agent's GH_TOKEN.
+      const repo = store.repo(repoId)
+      if (repo) await adoptGuessedAccount(repo.path)
       const result = await createSession(repoId, name, base, mode, launch)
       if (result.session) pushSessions()
       return result

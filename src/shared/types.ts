@@ -598,6 +598,12 @@ export type ClaudeUsage =
     }
   | { ok: false; at: number; error: string }
 
+/**
+ * What Maestro made of a repo's account on adding it: settled, or a short list to ask about —
+ * `several` can push and none owns the repo, `none` showed push access.
+ */
+export type AccountGuess = { login: string } | { choose: string[]; why: 'several' | 'none' }
+
 export interface GithubAccounts {
   /** Null when `gh` is missing or could not answer. */
   accounts: { login: string; active: boolean }[] | null

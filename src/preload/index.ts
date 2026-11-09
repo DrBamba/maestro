@@ -22,6 +22,7 @@ import type {
   PrResult,
   PrStatus,
   GithubAccounts,
+  AccountGuess,
   ClaudeUsage,
   Preferences,
   LocalFolderPlan,
@@ -123,7 +124,9 @@ const api = {
   },
 
   repos: {
-    add: (): Promise<{ repo?: Repo; error?: string }> => ipcRenderer.invoke('repo:add'),
+    /** `account` is set when Maestro picked or needs to ask which GitHub account the repo uses. */
+    add: (): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> =>
+      ipcRenderer.invoke('repo:add'),
     update: (id: string, patch: Partial<Repo>): Promise<Repo | undefined> =>
       ipcRenderer.invoke('repo:update', id, patch),
     /** The sidebar's order, top to bottom. */
@@ -144,7 +147,13 @@ const api = {
       ipcRenderer.invoke('repo:githubAccount', id),
     /** Null goes back to gh's active account. */
     setGithubAccount: (id: string, login: string | null): Promise<void> =>
-      ipcRenderer.invoke('repo:setGithubAccount', id, login)
+      ipcRenderer.invoke('repo:setGithubAccount', id, login),
+    /** Clones into `parent` and adds the repo, recording `login` as its account. */
+    clone: (source: string, parent: string, login: string | null): Promise<{ repo?: Repo; error?: string }> =>
+      ipcRenderer.invoke('repo:clone', source, parent, login),
+    /** gh's logged-in accounts, or null when gh is missing. */
+    githubAccounts: (): Promise<{ login: string; active: boolean }[] | null> =>
+      ipcRenderer.invoke('github:accounts')
   },
 
   sessions: {

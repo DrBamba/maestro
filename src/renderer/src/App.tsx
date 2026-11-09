@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLocal } from '@shared/types'
 import type {
+  AccountGuess,
   AgentStatus,
   BranchSync,
   DisposeAction,
@@ -27,6 +28,7 @@ import LocalSessionDialog from './components/LocalSessionDialog'
 import MergeDialog from './components/MergeDialog'
 import PrDialog from './components/PrDialog'
 import GithubAccountDialog from './components/GithubAccountDialog'
+import CloneRepoDialog from './components/CloneRepoDialog'
 import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
 import BulkDisposeDialog from './components/BulkDisposeDialog'
@@ -51,6 +53,8 @@ type Overlay =
   | 'merge'
   | 'pr'
   | 'github'
+  | 'askAccount'
+  | 'clone'
   | 'dispose'
   | 'bulkDispose'
   | 'rename'
@@ -98,6 +102,11 @@ export default function App(): React.JSX.Element {
   const [appStartedAt, setAppStartedAt] = useState(Date.now())
 
   const [overlay, setOverlay] = useState<Overlay>(null)
+  /** A repo just added whose GitHub account Maestro could not settle by itself. */
+  const [accountAsk, setAccountAsk] = useState<{
+    repo: Repo
+    guess: Extract<AccountGuess, { choose: string[] }>
+  } | null>(null)
   const [newRepoId, setNewRepoId] = useState<string | null>(null)
   const [disposeAction, setDisposeAction] = useState<DisposeAction>('archive')
   /** Which session the dispose dialog is about — not always the active one. */
@@ -319,11 +328,29 @@ export default function App(): React.JSX.Element {
   const addRepo = useCallback(async () => {
     const result = await window.maestro.repos.add()
     if (result.error) return notice(result.error)
-    if (result.repo) {
-      setRepos((prev) => (prev.some((r) => r.id === result.repo!.id) ? prev : [...prev, result.repo!]))
-      notice(`Added ${result.repo.name}`)
+    const repo = result.repo
+    if (!repo) return
+    setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
+    const account = result.account
+    if (account && 'choose' in account) {
+      setAccountAsk({ repo, guess: account })
+      setOverlay('askAccount')
     }
+    notice(account && 'login' in account ? `Added ${repo.name} as ${account.login}` : `Added ${repo.name}`)
   }, [notice])
+
+  const cloneRepo = useCallback(
+    async (source: string, parent: string, login: string | null): Promise<string | null> => {
+      const result = await window.maestro.repos.clone(source, parent, login)
+      if (result.error) return result.error
+      const repo = result.repo!
+      setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
+      setOverlay(null)
+      notice(login ? `Cloned ${repo.name} as ${login}` : `Cloned ${repo.name}`)
+      return null
+    },
+    [notice]
+  )
 
   const openRemoveRepo = useCallback((repoId: string) => {
     setRemoveRepoTarget(repoId)
@@ -746,6 +773,13 @@ export default function App(): React.JSX.Element {
           void addRepo()
         }
       },
+      {
+        id: 'clone-repo',
+        icon: 'ph ph-download-simple',
+        label: 'Clone repo…',
+        hint: 'as one of your GitHub accounts',
+        run: () => setOverlay('clone')
+      },
       ...repos.map((repo) => ({
         id: `remove-repo-${repo.id}`,
         icon: 'ph ph-trash',
@@ -977,6 +1011,7 @@ export default function App(): React.JSX.Element {
         onToggleRepo={toggleRepo}
         onReorderRepos={reorderRepos}
         onAddRepo={() => void addRepo()}
+        onCloneRepo={() => setOverlay('clone')}
         onRemoveRepo={openRemoveRepo}
         onDeleteLocalFolder={openDeleteFolder}
         onRestore={(id) => void restoreSession(id)}
@@ -1104,6 +1139,25 @@ export default function App(): React.JSX.Element {
           repoName={activeRepo.name}
           onClose={() => setOverlay(null)}
           onSaved={(login) => notice(`${activeRepo.name} now uses ${login ?? 'gh’s default account'}`)}
+        />
+      )}
+
+      {overlay === 'askAccount' && accountAsk && (
+        <GithubAccountDialog
+          repoId={accountAsk.repo.id}
+          repoName={accountAsk.repo.name}
+          asking={accountAsk.guess}
+          onClose={() => setOverlay(null)}
+          onSaved={(login) => notice(`${accountAsk.repo.name} now uses ${login ?? 'gh’s default account'}`)}
+        />
+      )}
+
+      {overlay === 'clone' && (
+        <CloneRepoDialog
+          home={home}
+          defaultParent={repos.length ? repos[repos.length - 1].path.replace(/\/[^/]+\/?$/, '') : home}
+          onClose={() => setOverlay(null)}
+          onClone={cloneRepo}
         />
       )}
 

@@ -466,6 +466,7 @@ interface SidebarProps {
   onToggleLocal: () => void
   onToggleRepo: (repoId: string) => void
   onAddRepo: () => void
+  onCloneRepo: () => void
   onRemoveRepo: (repoId: string) => void
   /** Every listed repo's id, in the order they were dragged into. */
   onReorderRepos: (ids: string[]) => void
@@ -624,6 +625,7 @@ export default function Sidebar({
   onToggleLocal,
   onToggleRepo,
   onAddRepo,
+  onCloneRepo,
   onRemoveRepo,
   onReorderRepos,
   onDeleteLocalFolder,
@@ -891,6 +893,9 @@ export default function Sidebar({
         <button className="btn btn--block" onClick={onAddRepo}>
           <i className="ph ph-folder-plus" style={{ fontSize: 15 }} />
           Add repo
+        </button>
+        <button className="icon-btn-bare" onClick={onCloneRepo} aria-label="Clone repo" title="Clone repo">
+          <i className="ph ph-download-simple" style={{ fontSize: 18 }} />
         </button>
         <UsageRing />
         <button className="icon-btn-bare" onClick={onOpenSettings} aria-label="Settings" title="Settings">
