@@ -429,7 +429,8 @@ select {
 
 /*
  * Where a row's branch stands: commits ahead while unmerged, a merge glyph once any of it landed.
- * Green is pushed and amber is not. The accent counts what came after: it still has to land.
+ * Green is pushed and amber is not. What came after counts in grey until origin has it, then
+ * in the accent, like an unmerged branch.
  */
 .sync {
   display: inline-flex;
@@ -464,6 +465,11 @@ select {
 .sync__after {
   display: inline-flex;
   align-items: center;
+  gap: 1px;
+  color: var(--color-neutral-600);
+}
+
+.sync__after.is-pushed {
   color: var(--color-accent-400);
 }
 

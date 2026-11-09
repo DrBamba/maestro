@@ -78,7 +78,13 @@ test('a session shows when its work lands on main, is pushed, and moves on', asy
   await writeFile(join(session.path, 'notes.txt'), 'draft\n', 'utf8')
   await expect(chip).toHaveText('On origin/main+1 commit · 1 file since', { timeout: 15_000 })
   await expect(mark.locator('.sync__after')).toHaveText('+1')
+  await expect(mark.locator('.sync__after')).not.toHaveClass(/is-pushed/)
   await expect(row(window, 'version route')).not.toHaveClass(/is-landed/)
+
+  // Pushing what came after tells it apart from work that is only local.
+  await exec('git', ['push', '-q', 'origin', session.branch], { cwd: session.path })
+  await expect(mark.locator('.sync__after')).toHaveClass(/is-pushed/, { timeout: 15_000 })
+  await expect(window.locator('.session__header .push-chip')).toHaveText('Pushed · not merged')
 })
 
 test('a session that is not open still shows its landing in the sidebar', async ({

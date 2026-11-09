@@ -876,9 +876,9 @@ export default function SessionView({
             {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{filesChanged(status.files.length)}</span>
             )}
-            {status && !status.landing && status.ahead > 0 && status.unpushed !== null && (
-              <PushChip unpushed={status.unpushed} />
-            )}
+            {status &&
+              (status.landing ? status.landing.commitsAfter > 0 : status.ahead > 0) &&
+              status.unpushed !== null && <PushChip unpushed={status.unpushed} />}
           </div>
         </div>
         {/* Appears once there is something to undo — an arrangement is its own invitation. */}

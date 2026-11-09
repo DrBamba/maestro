@@ -26,23 +26,32 @@ export function SyncMark({ sync }: { sync: BranchSync | undefined }): React.JSX.
   }
   const since = sinceLanding(landing.commitsAfter, landing.filesAfter)
   const where = landedOn(landing.where, landing.ref)
+  // Commits since the landing read like the unmerged mark: accent once origin has them, grey until.
+  const afterPushed = landing.commitsAfter > 0 && unpushed === 0
+  const tip = [where, since, landing.commitsAfter > 0 && pushState(unpushed ?? landing.commitsAfter)]
   return (
     <span
       className={`sync is-${landing.where}${since ? ' is-after' : ''}`}
-      data-tip={since ? `${where} · ${since}` : where}
+      data-tip={tip.filter(Boolean).join(' · ')}
     >
       <i className="ph ph-git-merge" />
       {landing.where === 'local' && <i className="ph ph-arrow-up sync__small" />}
-      {since && <span className="sync__after">+{afterGlyph(landing)}</span>}
+      {since && (
+        <span className={`sync__after${afterPushed ? ' is-pushed' : ''}`}>
+          +{afterGlyph(landing, afterPushed)}
+        </span>
+      )}
     </span>
   )
 }
 
-function afterGlyph(landing: Landing): React.ReactNode {
-  return landing.commitsAfter > 0 ? (
-    landing.commitsAfter
-  ) : (
-    <i className="ph ph-pencil-simple sync__small" />
+function afterGlyph(landing: Landing, pushed: boolean): React.ReactNode {
+  if (landing.commitsAfter === 0) return <i className="ph ph-pencil-simple sync__small" />
+  return (
+    <>
+      {landing.commitsAfter}
+      {!pushed && <i className="ph ph-arrow-up sync__small" />}
+    </>
   )
 }
 
