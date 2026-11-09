@@ -28,7 +28,7 @@ import LocalSessionDialog from './components/LocalSessionDialog'
 import MergeDialog from './components/MergeDialog'
 import PrDialog from './components/PrDialog'
 import GithubAccountDialog from './components/GithubAccountDialog'
-import CloneRepoDialog from './components/CloneRepoDialog'
+import AddRepoDialog from './components/AddRepoDialog'
 import ImportSessionDialog from './components/ImportSessionDialog'
 import DisposeDialog from './components/DisposeDialog'
 import BulkDisposeDialog from './components/BulkDisposeDialog'
@@ -54,7 +54,7 @@ type Overlay =
   | 'pr'
   | 'github'
   | 'askAccount'
-  | 'clone'
+  | 'addRepo'
   | 'dispose'
   | 'bulkDispose'
   | 'rename'
@@ -325,19 +325,25 @@ export default function App(): React.JSX.Element {
   }, [])
 
   // ── actions ───────────────────────────────────────────────────────────────
-  const addRepo = useCallback(async () => {
-    const result = await window.maestro.repos.add()
-    if (result.error) return notice(result.error)
-    const repo = result.repo
-    if (!repo) return
-    setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
-    const account = result.account
-    if (account && 'choose' in account) {
-      setAccountAsk({ repo, guess: account })
-      setOverlay('askAccount')
-    }
-    notice(account && 'login' in account ? `Added ${repo.name} as ${account.login}` : `Added ${repo.name}`)
-  }, [notice])
+  /** Adds a folder already on disk; asks for its GitHub account when main could not settle one. */
+  const addRepo = useCallback(
+    async (path: string): Promise<string | null> => {
+      const result = await window.maestro.repos.add(path)
+      if (result.error) return result.error
+      const repo = result.repo!
+      setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
+      const account = result.account
+      if (account && 'choose' in account) {
+        setAccountAsk({ repo, guess: account })
+        setOverlay('askAccount')
+      } else {
+        setOverlay(null)
+      }
+      notice(account && 'login' in account ? `Added ${repo.name} as ${account.login}` : `Added ${repo.name}`)
+      return null
+    },
+    [notice]
+  )
 
   const cloneRepo = useCallback(
     async (source: string, parent: string, login: string | null): Promise<string | null> => {
@@ -767,18 +773,9 @@ export default function App(): React.JSX.Element {
       {
         id: 'add-repo',
         icon: 'ph ph-folder-plus',
-        label: 'Add repo',
-        run: () => {
-          setOverlay(null)
-          void addRepo()
-        }
-      },
-      {
-        id: 'clone-repo',
-        icon: 'ph ph-download-simple',
-        label: 'Clone repo…',
-        hint: 'as one of your GitHub accounts',
-        run: () => setOverlay('clone')
+        label: 'Add repo…',
+        hint: 'clone or add a folder',
+        run: () => setOverlay('addRepo')
       },
       ...repos.map((repo) => ({
         id: `remove-repo-${repo.id}`,
@@ -1010,8 +1007,7 @@ export default function App(): React.JSX.Element {
         onToggleLocal={() => setLocalCollapsed((v) => !v)}
         onToggleRepo={toggleRepo}
         onReorderRepos={reorderRepos}
-        onAddRepo={() => void addRepo()}
-        onCloneRepo={() => setOverlay('clone')}
+        onAddRepo={() => setOverlay('addRepo')}
         onRemoveRepo={openRemoveRepo}
         onDeleteLocalFolder={openDeleteFolder}
         onRestore={(id) => void restoreSession(id)}
@@ -1082,7 +1078,7 @@ export default function App(): React.JSX.Element {
           </div>
           <button
             className="btn btn--primary"
-            onClick={() => (repos.length === 0 ? void addRepo() : setOverlay('new'))}
+            onClick={() => setOverlay(repos.length === 0 ? 'addRepo' : 'new')}
           >
             <i className="ph ph-plus" style={{ fontSize: 15 }} />
             {repos.length === 0 ? 'Add repo' : 'New session'}
@@ -1152,12 +1148,13 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {overlay === 'clone' && (
-        <CloneRepoDialog
+      {overlay === 'addRepo' && (
+        <AddRepoDialog
           home={home}
           defaultParent={repos.length ? repos[repos.length - 1].path.replace(/\/[^/]+\/?$/, '') : home}
           onClose={() => setOverlay(null)}
           onClone={cloneRepo}
+          onAdd={addRepo}
         />
       )}
 

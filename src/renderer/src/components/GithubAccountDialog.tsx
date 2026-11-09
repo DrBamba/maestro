@@ -63,7 +63,7 @@ export default function GithubAccountDialog({
 
       {accounts.length > 0 && (
         <div className="field">
-          <label>Push and open PRs as</label>
+          <label>Commit, push and open PRs as</label>
           <div className="seg seg--lg" role="group" aria-label="GitHub account">
             <button
               className={`seg__opt${choice === null ? ' is-on' : ''}`}

@@ -1042,8 +1042,7 @@ const repoNames = (window: Page) =>
 
 test('removing a repo hides it and its sessions, and adding it back returns them', async ({
   window,
-  relaunch,
-  running
+  relaunch
 }) => {
   await createSession(window, 'work in a removed repo')
   const session = await window.evaluate(() => window.maestro.snapshot().then((s) => s.sessions[0]))
@@ -1066,11 +1065,11 @@ test('removing a repo hides it and its sessions, and adding it back returns them
   await expect(repoNames(next)).toHaveText(['demo-web'])
   await expect(next.locator('.session-row')).toHaveCount(0)
 
-  // Add repo, with the native folder picker answered in main.
-  await running.app!.evaluate(({ dialog }, path) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
-  }, repoPath)
+  // Add repo, pointed at the folder it was removed from.
   await next.click('.sidebar__foot .btn--block')
+  await next.locator('.modal .seg__opt', { hasText: 'Existing folder' }).click()
+  await next.fill('#repo-path', repoPath)
+  await next.click('.modal__actions .btn--primary')
 
   // The same session, not a new one.
   await expect(repoNames(next)).toHaveText(['demo-web', 'demo-api'])

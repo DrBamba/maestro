@@ -83,15 +83,57 @@ export async function describeAccounts(cwd: string): Promise<GithubAccounts> {
  */
 export async function setRepoAccount(repoPath: string, login: string | null): Promise<void> {
   if (login !== null && !LOGIN.test(login)) throw new Error(`Not a GitHub login: ${login}`)
+  const previous = await repoAccount(repoPath)
   await gitConfig(repoPath, ['--local', '--unset-all', HELPER_KEY, OURS])
   const set = async (args: string[]): Promise<void> => {
     await exec('git', ['config', '--local', ...args], { cwd: repoPath })
   }
   await set([ACCOUNT_KEY, login ?? ''])
+  await setCommitIdentity(repoPath, login, previous)
   if (login === null) return
   // The empty entry resets the helper list, so the keychain's saved login never answers first.
   await set(['--add', HELPER_KEY, ''])
   await set(['--add', HELPER_KEY, helperFor(login)])
+}
+
+/** The address GitHub links to an account without exposing a real one. */
+function noreplyEmail(id: number, login: string): string {
+  return `${id}+${login}@users.noreply.github.com`
+}
+
+/**
+ * Commits follow the account too: local `user.name` and `user.email` become its profile name and
+ * noreply address, so a commit is linked to the account that pushes it. Best-effort — offline, the
+ * identity stays as it was rather than failing the account change.
+ *
+ * Going back to "gh default" removes the identity only when it is the previous account's noreply
+ * address, so an identity someone set by hand is never taken away.
+ */
+async function setCommitIdentity(repoPath: string, login: string | null, previous: string | null): Promise<void> {
+  if (login === null) {
+    const email = await gitConfig(repoPath, ['--local', '--get', 'user.email'])
+    if (previous && email && new RegExp(`^\\d+\\+${previous}@users\\.noreply\\.github\\.com$`, 'i').test(email)) {
+      await gitConfig(repoPath, ['--local', '--unset-all', 'user.email'])
+      await gitConfig(repoPath, ['--local', '--unset-all', 'user.name'])
+    }
+    return
+  }
+  const token = await tokenFor(login)
+  if (!token) return
+  try {
+    const { stdout } = await exec('gh', ['api', 'user'], {
+      env: { ...process.env, GH_TOKEN: token },
+      timeout: 10_000
+    })
+    const user = JSON.parse(stdout) as { id?: number; login?: string; name?: string | null }
+    if (typeof user.id !== 'number') return
+    await exec('git', ['config', '--local', 'user.name', user.name || login], { cwd: repoPath })
+    await exec('git', ['config', '--local', 'user.email', noreplyEmail(user.id, user.login ?? login)], {
+      cwd: repoPath
+    })
+  } catch {
+    // Keep whatever identity the repo had.
+  }
 }
 
 /**

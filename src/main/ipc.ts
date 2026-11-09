@@ -50,6 +50,7 @@ import { claudeUsage } from './claudeUsage'
 import {
   addRepo,
   cloneRepo,
+  expandHome,
   applyGeneratedTitle,
   archivePlan,
   disposeSession,
@@ -380,19 +381,18 @@ export function registerIpc(): void {
   )
 
   // ── repos ───────────────────────────────────────────────────────────────────
-  ipcMain.handle('repo:add', async (): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> => {
-    const result = await dialog.showOpenDialog({
-      title: 'Add a repository',
-      properties: ['openDirectory', 'createDirectory'],
-      buttonLabel: 'Add repo'
-    })
-    if (result.canceled || result.filePaths.length === 0) return {}
-    const added = await addRepo(result.filePaths[0])
-    if ('error' in added) return { error: added.error }
-    // A removed repo comes back with its sessions.
-    pushSessions()
-    return { repo: added, account: (await adoptGuessedAccount(added.path)) ?? undefined }
-  })
+  /** Adds a folder already on disk, typed or picked in the Add repo dialog. */
+  ipcMain.handle(
+    'repo:add',
+    async (_e, path: string): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> => {
+      if (!path.trim()) return { error: 'Which folder?' }
+      const added = await addRepo(expandHome(path))
+      if ('error' in added) return { error: added.error }
+      // A removed repo comes back with its sessions.
+      pushSessions()
+      return { repo: added, account: (await adoptGuessedAccount(added.path)) ?? undefined }
+    }
+  )
 
   ipcMain.handle(
     'repo:clone',

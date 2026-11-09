@@ -125,8 +125,8 @@ const api = {
 
   repos: {
     /** `account` is set when Maestro picked or needs to ask which GitHub account the repo uses. */
-    add: (): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> =>
-      ipcRenderer.invoke('repo:add'),
+    add: (path: string): Promise<{ repo?: Repo; error?: string; account?: AccountGuess }> =>
+      ipcRenderer.invoke('repo:add', path),
     update: (id: string, patch: Partial<Repo>): Promise<Repo | undefined> =>
       ipcRenderer.invoke('repo:update', id, patch),
     /** The sidebar's order, top to bottom. */
