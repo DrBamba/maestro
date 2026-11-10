@@ -129,7 +129,8 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    const target = externalLink(url)
+    if (target) void shell.openExternal(target)
     return { action: 'deny' }
   })
 

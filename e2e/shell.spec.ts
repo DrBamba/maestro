@@ -416,6 +416,55 @@ test('the Console tab runs a shell in the session directory', async ({ window })
   expect(printed.endsWith(session.worktreePath.replace(/^\/private/, ''))).toBe(true)
 })
 
+test('Cmd/Ctrl+click on a link in a console opens it in the browser', async ({ window, app }) => {
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as unknown as { opened: string[] }).opened = opened
+    shell.openExternal = async (url: string) => {
+      opened.push(url)
+    }
+  })
+  const opened = (): Promise<string[]> =>
+    app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened)
+
+  await createSession(window, 'console links')
+  await window.click('.tab:has-text("Console")')
+  await expect.poll(() => activeClass(window), { timeout: 15_000 }).toContain('xterm-helper-textarea')
+
+  // A screenful of the same link, so the row clicked is a link whatever the prompt looks like.
+  const url = 'https://example.com/maestro-link'
+  await window.keyboard.type(`clear; for i in $(seq 1 12); do echo ${url}; done`)
+  await window.keyboard.press('Enter')
+
+  const screen = window.locator('.xterm-screen:visible')
+  const box = (await screen.boundingBox())!
+  const at = { x: box.x + 8, y: box.y + 100 }
+  // Give the shell time to print, then hover so the link is detected under the pointer.
+  await expect
+    .poll(
+      async () => {
+        // Off to an empty part of the screen and back, since a link is only looked for when the
+        // pointer enters a new cell.
+        await window.mouse.move(box.x + box.width - 8, box.y + box.height - 8)
+        await window.mouse.move(at.x, at.y)
+        return screen.evaluate((el) => !!el.closest('.xterm-cursor-pointer'))
+      },
+      { timeout: 15_000 }
+    )
+    .toBe(true)
+
+  // A plain click is for selecting text, not opening.
+  await window.mouse.click(at.x, at.y)
+  await window.waitForTimeout(300)
+  expect(await opened()).toEqual([])
+
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await window.keyboard.down(modifier)
+  await window.mouse.click(at.x, at.y)
+  await window.keyboard.up(modifier)
+  await expect.poll(opened, { timeout: 5_000 }).toEqual([url])
+})
+
 test('a second console is its own shell, and the first one keeps its scrollback', async ({
   window
 }) => {

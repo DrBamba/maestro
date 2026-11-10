@@ -126,7 +126,15 @@ export default function TerminalView({
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    term.loadAddon(new WebLinksAddon())
+    // The addon's own handler opens a blank window and sets its address afterwards, so the main
+    // process only ever sees `about:blank` and the link goes nowhere. Opening the URL directly hands
+    // it to the window-open handler, which sends it to the browser. Cmd/Ctrl+click, as in an editor,
+    // so a plain click stays free for selecting text.
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (mac ? event.metaKey : event.ctrlKey) window.open(uri)
+      })
+    )
     term.open(host)
     // The window's chords go past the terminal to the window's own listener.
     term.attachCustomKeyEventHandler((e) => {
