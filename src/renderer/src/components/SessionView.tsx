@@ -411,8 +411,14 @@ export default function SessionView({
     // whatever directory it happens to point at would only produce noise.
     if (!active || local) return
     void refresh()
-    const timer = setInterval(() => void refresh(), STATUS_POLL_MS)
-    return () => clearInterval(timer)
+    // Paused while Maestro is in the background; coming back refreshes at once.
+    const timer = setInterval(() => document.hasFocus() && void refresh(), STATUS_POLL_MS)
+    const onFocus = (): void => void refresh()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [active, local, refresh])
 
   // ── editor ────────────────────────────────────────────────────────────────

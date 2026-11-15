@@ -40,3 +40,26 @@ test('an open session polls git status on an interval, not in a loop', async ({ 
   // Two or three ticks of a four-second poll, with room for a focus or arrangement refresh.
   expect((await statusPasses(profileDir)) - before).toBeLessThanOrEqual(5)
 })
+
+test('polling pauses while Maestro is in the background, and catches up on return', async ({
+  window,
+  profileDir
+}) => {
+  await createSession(window, 'background', 'demo-api')
+  await expect.poll(() => statusPasses(profileDir), { timeout: 15_000 }).toBeGreaterThan(0)
+
+  // A headless test window always reports focus, so the page is told it has none.
+  await window.evaluate(() => {
+    document.hasFocus = () => false
+  })
+  await window.waitForTimeout(500) // a pass already under way still lands
+  const away = await statusPasses(profileDir)
+  await window.waitForTimeout(9_000)
+  expect(await statusPasses(profileDir)).toBe(away)
+
+  await window.evaluate(() => {
+    document.hasFocus = () => true
+    window.dispatchEvent(new Event('focus'))
+  })
+  await expect.poll(() => statusPasses(profileDir), { timeout: 5_000 }).toBeGreaterThan(away)
+})

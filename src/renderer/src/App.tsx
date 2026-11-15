@@ -286,7 +286,8 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const refresh = (): void => void window.maestro.git.sync().then(setSyncs)
     refresh()
-    const timer = setInterval(refresh, SYNC_POLL_MS)
+    // Nobody reads the marks from another app; focus catches them up.
+    const timer = setInterval(() => document.hasFocus() && refresh(), SYNC_POLL_MS)
     window.addEventListener('focus', refresh)
     return () => {
       clearInterval(timer)

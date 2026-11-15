@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { accessSync, constants } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { join, basename, dirname } from 'node:path'
 import type {
@@ -31,9 +32,46 @@ export class GitError extends Error {
   }
 }
 
+/*
+ * On macOS `/usr/bin/git` is Apple's launcher, which looks up the developer directory on every call
+ * before running the real binary — about three times the cost of a short git call, and the polls
+ * make many. The binary it would run is looked up once instead. Keyed on PATH, which grows once the
+ * login shell's arrives, and which is how a stand-in git on PATH still wins.
+ */
+let resolvedGit: { path: string; bin: Promise<string> } | null = null
+
+function gitBinary(): Promise<string> {
+  const path = process.env.PATH ?? ''
+  if (resolvedGit?.path === path) return resolvedGit.bin
+  const bin = (async (): Promise<string> => {
+    if (process.platform !== 'darwin') return 'git'
+    const first = path
+      .split(':')
+      .filter(Boolean)
+      .map((dir) => join(dir, 'git'))
+      .find((file) => {
+        try {
+          accessSync(file, constants.X_OK)
+          return true
+        } catch {
+          return false
+        }
+      })
+    if (first !== '/usr/bin/git') return 'git'
+    try {
+      const { stdout } = await exec('/usr/bin/xcrun', ['--find', 'git'], { timeout: 5000 })
+      return stdout.trim() || 'git'
+    } catch {
+      return 'git'
+    }
+  })()
+  resolvedGit = { path, bin }
+  return bin
+}
+
 async function git(cwd: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await exec('git', args, { cwd, maxBuffer: MAX_BUFFER })
+    const { stdout } = await exec(await gitBinary(), args, { cwd, maxBuffer: MAX_BUFFER })
     return stdout
   } catch (err) {
     const e = err as { stderr?: string; message: string }
