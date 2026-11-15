@@ -2209,7 +2209,7 @@ select.input:hover {
 .usage-ring__track,
 .usage-ring__fill {
   fill: none;
-  stroke-width: 2.5;
+  stroke-width: 2;
 }
 
 .usage-ring__track {
@@ -2222,11 +2222,11 @@ select.input:hover {
   transition: stroke-dashoffset 0.4s ease;
 }
 
-.usage-ring.is-high .usage-ring__fill {
+.usage-ring__arc.is-high .usage-ring__fill {
   stroke: var(--status-pending);
 }
 
-.usage-ring.is-full .usage-ring__fill {
+.usage-ring__arc.is-full .usage-ring__fill {
   stroke: var(--status-del);
 }
 

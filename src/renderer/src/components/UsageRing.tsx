@@ -22,11 +22,11 @@ export function resetsIn(iso: string, now: number): string {
   return `Resets ${day} ${time}`
 }
 
-function Ring({ percent, tone }: { percent: number | null; tone: string }): React.JSX.Element {
-  const r = 7
+function Arc({ r, percent }: { r: number; percent: number | null }): React.JSX.Element {
   const c = 2 * Math.PI * r
+  const tone = percent === null ? 'none' : level(percent)
   return (
-    <svg className={`usage-ring is-${tone}`} width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+    <g className={`usage-ring__arc is-${tone}`}>
       <circle className="usage-ring__track" cx="9" cy="9" r={r} />
       {percent !== null && (
         <circle
@@ -38,13 +38,23 @@ function Ring({ percent, tone }: { percent: number | null; tone: string }): Reac
           strokeDashoffset={c * (1 - percent / 100)}
         />
       )}
+    </g>
+  )
+}
+
+/** The session limit on the outer circle, the weekly limit on the inner one. */
+function Ring({ outer, inner }: { outer: number | null; inner: number | null }): React.JSX.Element {
+  return (
+    <svg className="usage-ring" width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <Arc r={7.5} percent={outer} />
+      <Arc r={4} percent={inner} />
     </svg>
   )
 }
 
 /**
- * Claude's plan usage, at a glance in the sidebar footer: a ring filled to the limit nearest to
- * running out. Pressing it opens every limit with its reset time.
+ * Claude's plan usage, at a glance in the sidebar footer: the session limit as the outer ring and
+ * the weekly limit as the inner one. Pressing it opens every limit with its reset time.
  */
 export default function UsageRing(): React.JSX.Element {
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
@@ -94,8 +104,9 @@ export default function UsageRing(): React.JSX.Element {
   }, [open, refresh])
 
   const windows = usage?.ok ? usage.windows : []
-  const top = windows.length ? Math.max(...windows.map((w) => w.percent)) : null
-  const tone = top === null ? 'none' : level(top)
+  // Matched by label so the per-model weekly limits never take a ring; the order is the fallback.
+  const session = windows.find((w) => w.label === 'Session') ?? windows[0]
+  const weekly = windows.find((w) => w.label === 'Weekly') ?? windows.find((w) => w !== session)
   const tip = usage?.ok
     ? windows.map((w) => `${w.label} ${w.percent}%`).join(' · ') || 'Claude usage'
     : usage
@@ -111,7 +122,7 @@ export default function UsageRing(): React.JSX.Element {
         aria-expanded={open}
         data-tip={open ? undefined : tip}
       >
-        <Ring percent={top} tone={tone} />
+        <Ring outer={session?.percent ?? null} inner={weekly?.percent ?? null} />
       </button>
 
       {open && (
