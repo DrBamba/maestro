@@ -394,11 +394,15 @@ export default function SessionView({
   // ── git polling ───────────────────────────────────────────────────────────
   // Still needed without the panels: the header shows branch state, and the merge and PR
   // dialogs read it.
+  // Read through a ref: the poll below restarts whenever `refresh` changes, so depending on a
+  // callback prop would restart it on every parent render and run git back to back.
+  const onStatusRef = useRef(onStatus)
+  onStatusRef.current = onStatus
   const refresh = useCallback(async () => {
     const next = await window.maestro.git.status(session.id)
     setStatus(next)
-    onStatus(session.id, next)
-  }, [session.id, onStatus])
+    onStatusRef.current(session.id, next)
+  }, [session.id])
 
   const local = isLocal(session)
 

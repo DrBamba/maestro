@@ -132,6 +132,18 @@ export default function App(): React.JSX.Element {
   const restoredWindow = useRef(false)
   const [localCollapsed, setLocalCollapsed] = useState(false)
   const [statuses, setStatuses] = useState<Record<string, GitStatus | null>>({})
+  /*
+   * Stable, and a no-op when nothing changed. Each poll returns a fresh object, so an identity check
+   * re-rendered the whole app every four seconds; an unstable callback re-ran the poll on every
+   * render, which spawned git back to back without pause.
+   */
+  const recordStatus = useCallback((sessionId: string, status: GitStatus | null) => {
+    setStatuses((prev) =>
+      JSON.stringify(prev[sessionId]) === JSON.stringify(status)
+        ? prev
+        : { ...prev, [sessionId]: status }
+    )
+  }, [])
   const [syncs, setSyncs] = useState<Record<string, BranchSync>>({})
   const [remote, setRemote] = useState<string | null>(null)
 
@@ -1076,9 +1088,7 @@ export default function App(): React.JSX.Element {
             onEditorHandle={(sessionId, handle) => {
               editors.current[sessionId] = handle
             }}
-            onStatus={(sessionId, status) =>
-              setStatuses((prev) => (prev[sessionId] === status ? prev : { ...prev, [sessionId]: status }))
-            }
+            onStatus={recordStatus}
           />
         )
       })}
