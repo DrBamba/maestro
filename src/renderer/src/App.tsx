@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isLocal } from '@shared/types'
+import { DEFAULT_REPO_PICKER_LIMIT, isLocal } from '@shared/types'
 import type {
   AccountGuess,
   AgentStatus,
@@ -1098,6 +1098,7 @@ export default function App(): React.JSX.Element {
         <NewSessionDialog
           repos={repos}
           initialRepoId={newRepoId}
+          repoPickerLimit={preferences.repoPickerLimit ?? DEFAULT_REPO_PICKER_LIMIT}
           autoMode={preferences.permissionMode === 'auto'}
           onAutoMode={(on) => void updatePreferences({ permissionMode: on ? 'auto' : undefined })}
           onClose={() => setOverlay(null)}

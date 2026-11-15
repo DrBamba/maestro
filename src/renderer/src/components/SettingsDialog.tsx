@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { DEFAULT_REPO_PICKER_LIMIT } from '@shared/types'
 import type { Preferences, ThemePreference } from '@shared/types'
 import Modal from './Modal'
 import { playChime } from '../lib/chime'
@@ -30,6 +32,18 @@ export default function SettingsDialog({
   const chime = preferences.chime === true
   const remote = preferences.remoteUpdates === true
   const skipTests = preferences.skipUpdateTests === true
+  const repoLimit = preferences.repoPickerLimit ?? DEFAULT_REPO_PICKER_LIMIT
+  // A draft, so the field can be cleared mid-edit; only a whole number of at least 1 is saved.
+  const [repoLimitDraft, setRepoLimitDraft] = useState(String(repoLimit))
+  const commitRepoLimit = (): void => {
+    const n = Number.parseInt(repoLimitDraft, 10)
+    if (!Number.isFinite(n) || n < 1) {
+      setRepoLimitDraft(String(repoLimit))
+      return
+    }
+    setRepoLimitDraft(String(n))
+    onChange({ repoPickerLimit: n === DEFAULT_REPO_PICKER_LIMIT ? undefined : n })
+  }
 
   return (
     <Modal onClose={onClose} width={460} label="Settings">
@@ -85,6 +99,26 @@ export default function SettingsDialog({
         {auto
           ? 'Applies to sessions started from now on. Inside a running session, shift+tab switches mode.'
           : 'Off: Claude Code’s own settings decide. Inside a running session, shift+tab switches mode.'}
+      </div>
+
+      <div className="field">
+        <label htmlFor="repo-picker-limit">New session</label>
+        <div className="field__row">
+          <span className="checkbox__label">Pick the repo from a dropdown past</span>
+          <input
+            id="repo-picker-limit"
+            className="input input--num"
+            type="number"
+            min={1}
+            value={repoLimitDraft}
+            onChange={(e) => setRepoLimitDraft(e.target.value)}
+            onBlur={commitRepoLimit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRepoLimit()
+            }}
+          />
+          <span className="checkbox__label">repos</span>
+        </div>
       </div>
 
       <div className="field">

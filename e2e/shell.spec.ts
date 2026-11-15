@@ -223,6 +223,40 @@ test('the launcher offers that setting where Claude is actually started', async 
   ).toHaveClass(/is-on/)
 })
 
+test('past the repo limit, the new-session dialog picks the repo from a dropdown', async ({
+  window,
+  agentLog,
+  profileDir
+}) => {
+  // Two demo repos sit under the default limit, so the buttons show.
+  await window.click('[aria-label="New session in demo-api"]')
+  await expect(window.locator('.modal [aria-label="Repo"] .seg__opt')).toHaveCount(2)
+  await expect(window.locator('#session-repo')).toHaveCount(0)
+  await window.click('.modal__actions .btn--ghost')
+
+  await window.click('[aria-label="Settings"]')
+  await window.fill('#repo-picker-limit', '1')
+  await window.click('.modal__actions .btn--primary')
+  await expect
+    .poll(async () => JSON.parse(await readFile(join(profileDir, 'maestro.json'), 'utf8')).preferences)
+    .toMatchObject({ repoPickerLimit: 1 })
+
+  // Opened from demo-api's own +, the dropdown starts on it; switching repo still works.
+  await window.click('[aria-label="New session in demo-api"]')
+  await expect(window.locator('.modal [aria-label="Repo"]')).toHaveCount(0)
+  const picker = window.locator('#session-repo')
+  await expect(picker.locator('option:checked')).toHaveText('demo-api')
+  await picker.selectOption({ label: 'demo-web' })
+  await window.fill('#session-name', 'picked from the dropdown')
+  await window.click('.modal__actions .btn--primary')
+  await expect(
+    window
+      .locator('.repo-group:has([aria-label="New session in demo-web"]) .session-row__name')
+      .filter({ hasText: 'picked from the dropdown' })
+  ).toHaveCount(1, { timeout: 30_000 })
+  await expect.poll(agentLog, { timeout: 30_000 }).toContain('picked from the dropdown')
+})
+
 test('the worktree and branch take a short handle, not the typed text', async ({ window }) => {
   await createSession(window, 'fix the double page on the invoice list')
 

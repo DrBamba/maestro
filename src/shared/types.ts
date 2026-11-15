@@ -491,7 +491,16 @@ export interface Preferences {
    * trusts that `main` was tested before it merged.
    */
   skipUpdateTests?: boolean
+  /**
+   * How many repos the new-session dialog shows as buttons before it switches to a dropdown.
+   * Undefined means DEFAULT_REPO_PICKER_LIMIT. The button row does not wrap, so past a handful of
+   * repos it runs off the side of the dialog.
+   */
+  repoPickerLimit?: number
 }
+
+/** The repo picker's button-row limit when the user has not set one. */
+export const DEFAULT_REPO_PICKER_LIMIT = 5
 
 /**
  * How to launch Claude. Resuming by explicit id is preferred over --continue, which cannot be

@@ -6,6 +6,8 @@ import Modal from './Modal'
 interface NewSessionDialogProps {
   repos: Repo[]
   initialRepoId: string | null
+  /** Past this many repos the picker is a dropdown instead of a row of buttons. */
+  repoPickerLimit: number
   autoMode: boolean
   onAutoMode: (on: boolean) => void
   onClose: () => void
@@ -25,6 +27,7 @@ const PROMPT_MAX_HEIGHT = 220
 export default function NewSessionDialog({
   repos,
   initialRepoId,
+  repoPickerLimit,
   autoMode,
   onAutoMode,
   onClose,
@@ -182,20 +185,43 @@ export default function NewSessionDialog({
     <Modal onClose={onClose} width={480} label="New session">
       <div className="modal__title">New session</div>
 
-      <div className="field">
-        <label>Repo</label>
-        <div className="seg seg--lg" role="group" aria-label="Repo">
-          {repos.map((r) => (
-            <button
-              key={r.id}
-              className={`seg__opt${r.id === repoId ? ' is-on' : ''}`}
-              onClick={() => setRepoId(r.id)}
-            >
-              {r.name}
-            </button>
-          ))}
+      {/*
+       * A row of buttons reads at a glance while it is short, but it does not wrap, so past the
+       * limit it would run off the side of the dialog. A dropdown rather than "first few + More":
+       * which repos would earn the visible slots is arbitrary, and the select matches "Start from".
+       */}
+      {repos.length > repoPickerLimit ? (
+        <div className="field">
+          <label htmlFor="session-repo">Repo</label>
+          <select
+            id="session-repo"
+            className="input"
+            value={repoId}
+            onChange={(e) => setRepoId(e.target.value)}
+          >
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
+      ) : (
+        <div className="field">
+          <label>Repo</label>
+          <div className="seg seg--lg" role="group" aria-label="Repo">
+            {repos.map((r) => (
+              <button
+                key={r.id}
+                className={`seg__opt${r.id === repoId ? ' is-on' : ''}`}
+                onClick={() => setRepoId(r.id)}
+              >
+                {r.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor="session-name">What are you building?</label>
