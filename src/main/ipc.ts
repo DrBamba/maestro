@@ -19,6 +19,7 @@ import type {
   PrStatus,
   GithubAccounts,
   AccountGuess,
+  NewRepoOptions,
   Preferences,
   RemoveRepoOptions,
   Repo,
@@ -41,11 +42,15 @@ import { updater } from './updater'
 import { createSetupScript, setupScriptIn, SETUP_SCRIPT_REL } from './setupScript'
 import {
   adoptGuessedAccount,
+  cancelGithubLogin,
   describeAccounts,
   githubAccounts,
   githubEnv,
-  setRepoAccount
+  setRepoAccount,
+  startGithubLogin,
+  waitGithubLogin
 } from './githubAccount'
+import { createRepo } from './newRepo'
 import { claudeUsage } from './claudeUsage'
 import {
   addRepo,
@@ -404,7 +409,23 @@ export function registerIpc(): void {
     }
   )
 
+  /** Starts a repo from nothing, from the Add repo dialog's New tab. */
+  ipcMain.handle(
+    'repo:create',
+    async (_e, opts: NewRepoOptions): Promise<{ repo?: Repo; error?: string; warning?: string }> => {
+      const made = await createRepo(opts)
+      if ('error' in made) return { error: made.error }
+      pushSessions()
+      return made
+    }
+  )
+
   ipcMain.handle('github:accounts', () => githubAccounts())
+  ipcMain.handle('github:login', () => startGithubLogin())
+  ipcMain.handle('github:loginWait', () => waitGithubLogin())
+  ipcMain.handle('github:loginCancel', () => cancelGithubLogin())
+  /** A fixed URL rather than one passed in, so the renderer cannot open anything else this way. */
+  ipcMain.handle('github:openDevice', () => shell.openExternal('https://github.com/login/device'))
 
   ipcMain.handle('repo:update', (_e, id: string, patch: Partial<Repo>) => store.updateRepo(id, patch))
 

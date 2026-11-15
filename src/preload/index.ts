@@ -23,6 +23,7 @@ import type {
   PrStatus,
   GithubAccounts,
   AccountGuess,
+  NewRepoOptions,
   ClaudeUsage,
   Preferences,
   LocalFolderPlan,
@@ -153,7 +154,17 @@ const api = {
       ipcRenderer.invoke('repo:clone', source, parent, login),
     /** gh's logged-in accounts, or null when gh is missing. */
     githubAccounts: (): Promise<{ login: string; active: boolean }[] | null> =>
-      ipcRenderer.invoke('github:accounts')
+      ipcRenderer.invoke('github:accounts'),
+    /** `git init` plus starter files, a first commit and optionally a GitHub repo; then adds it. */
+    create: (opts: NewRepoOptions): Promise<{ repo?: Repo; error?: string; warning?: string }> =>
+      ipcRenderer.invoke('repo:create', opts),
+    /** Starts `gh auth login --web`, resolving with the one-time code to enter on GitHub. */
+    githubLogin: (): Promise<{ code: string } | { error: string }> => ipcRenderer.invoke('github:login'),
+    /** Settles when that login does: true once the account is stored. */
+    githubLoginWait: (): Promise<boolean> => ipcRenderer.invoke('github:loginWait'),
+    githubLoginCancel: (): Promise<void> => ipcRenderer.invoke('github:loginCancel'),
+    /** Opens GitHub's device-login page in the browser. */
+    githubOpenDevice: (): Promise<void> => ipcRenderer.invoke('github:openDevice')
   },
 
   sessions: {

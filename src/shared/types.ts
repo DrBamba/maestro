@@ -667,3 +667,22 @@ export type UpdateStatus =
   | { state: 'failed'; message: string }
   /** The build needs a new terminal host, which only a real restart can bring. */
   | { state: 'restart'; subject: string }
+
+/** Gitignore templates a new repo can start with; `none` writes no file. */
+export const GITIGNORE_TEMPLATES = ['none', 'Node', 'Python', 'Go', 'Rust', 'Swift', 'Java'] as const
+export type GitignoreTemplate = (typeof GITIGNORE_TEMPLATES)[number]
+
+/** Everything the Add repo dialog's New tab asks for. */
+export interface NewRepoOptions {
+  /** The repo's own folder, `~` allowed; made when missing. Its name names the repo. */
+  path: string
+  /** The GitHub account it commits and pushes as; null leaves gh's active account in charge. */
+  login: string | null
+  branch: string
+  readme: boolean
+  gitignore: GitignoreTemplate
+  license: boolean
+  commit: boolean
+  /** Also creates it on GitHub as `login`, pushing the first commit when there is one. */
+  publish: 'off' | 'private' | 'public'
+}
