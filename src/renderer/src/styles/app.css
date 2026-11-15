@@ -868,6 +868,11 @@ select {
   background: var(--seg-on);
 }
 
+.seg__opt:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .seg--lg {
   border-radius: var(--radius-md);
 }
@@ -1461,6 +1466,46 @@ select {
 
 .field__row .btn {
   flex-shrink: 0;
+}
+
+.field__row--wrap {
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+/* Sized to its content beside checkboxes, rather than taking the whole row. */
+.input.input--compact {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 13px;
+}
+
+.field__hint--error {
+  color: var(--status-del);
+}
+
+.field__hint .spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+
+/* The one-time code from `gh auth login --web`, large enough to read across to the browser. */
+.gh-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gh-connect__code {
+  font: 600 22px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.12em;
+  color: var(--color-text);
 }
 
 .input {
@@ -2216,7 +2261,7 @@ select.input:hover {
 .usage-ring__track,
 .usage-ring__fill {
   fill: none;
-  stroke-width: 2.5;
+  stroke-width: 2;
 }
 
 .usage-ring__track {
@@ -2229,11 +2274,11 @@ select.input:hover {
   transition: stroke-dashoffset 0.4s ease;
 }
 
-.usage-ring.is-high .usage-ring__fill {
+.usage-ring__arc.is-high .usage-ring__fill {
   stroke: var(--status-pending);
 }
 
-.usage-ring.is-full .usage-ring__fill {
+.usage-ring__arc.is-full .usage-ring__fill {
   stroke: var(--status-del);
 }
 

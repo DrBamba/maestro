@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { AccountGuess, GithubAccounts } from '@shared/types'
 
@@ -55,15 +55,32 @@ export async function repoAccount(cwd: string): Promise<string | null> {
 }
 
 /** Logins `gh auth login` has stored for github.com, the active one marked. */
+/**
+ * The environment for asking gh about its stored logins. A `GH_TOKEN` inherited from a terminal
+ * Maestro started — a dev build run from a session, say — makes gh list that token as one more
+ * account, marked active, so the same login shows twice and the real active one is hidden.
+ */
+function storedLoginsEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  delete env.GH_TOKEN
+  delete env.GITHUB_TOKEN
+  return env
+}
+
 export async function githubAccounts(): Promise<{ login: string; active: boolean }[] | null> {
   try {
-    const { stdout } = await exec('gh', ['auth', 'status', '--hostname', 'github.com', '--json', 'hosts'])
+    const { stdout } = await exec('gh', ['auth', 'status', '--hostname', 'github.com', '--json', 'hosts'], {
+      env: storedLoginsEnv()
+    })
     const data = JSON.parse(stdout) as {
       hosts?: Record<string, { login?: string; active?: boolean; state?: string }[]>
     }
-    return (data.hosts?.['github.com'] ?? [])
-      .filter((a) => a.login && a.state === 'success')
-      .map((a) => ({ login: a.login as string, active: a.active === true }))
+    const accounts = new Map<string, boolean>()
+    for (const a of data.hosts?.['github.com'] ?? []) {
+      if (!a.login || a.state !== 'success') continue
+      accounts.set(a.login, accounts.get(a.login) === true || a.active === true)
+    }
+    return [...accounts].map(([login, active]) => ({ login, active }))
   } catch {
     return null
   }
@@ -148,9 +165,11 @@ export async function githubEnv(cwd: string): Promise<Record<string, string>> {
   return token ? { GH_TOKEN: token } : {}
 }
 
-async function tokenFor(login: string): Promise<string | null> {
+export async function tokenFor(login: string): Promise<string | null> {
   try {
-    const { stdout } = await exec('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login])
+    const { stdout } = await exec('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login], {
+      env: storedLoginsEnv()
+    })
     return stdout.trim() || null
   } catch {
     return null
@@ -257,4 +276,67 @@ export async function cloneAs(source: string, dest: string, login: string | null
   await exec('git', [...helper, 'clone', '--', cloneUrl(source), dest], {
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
   })
+}
+
+/**
+ * Connecting an account from inside Maestro, for someone with none: `gh auth login --web`, which
+ * without a terminal prints a one-time code and then polls GitHub until it is entered. The dialog
+ * shows the code; {@link waitGithubLogin} settles when gh does.
+ *
+ * One login at a time — a second press while the first is still polling gets the same code.
+ */
+let login: {
+  child: ChildProcess
+  code: Promise<{ code: string } | { error: string }>
+  done: Promise<boolean>
+  finished: boolean
+} | null = null
+
+export function startGithubLogin(): Promise<{ code: string } | { error: string }> {
+  if (login && !login.finished) return login.code
+  // A token in the environment also makes gh refuse to store a login at all.
+  const env = storedLoginsEnv()
+  const child = spawn(
+    'gh',
+    ['auth', 'login', '--web', '--hostname', 'github.com', '--git-protocol', 'https', '--skip-ssh-key'],
+    { env, stdio: ['ignore', 'pipe', 'pipe'] }
+  )
+  let output = ''
+  let settle: (r: { code: string } | { error: string }) => void = () => {}
+  const code = new Promise<{ code: string } | { error: string }>((resolve) => (settle = resolve))
+  const read = (chunk: Buffer): void => {
+    output += chunk.toString()
+    const found = output.match(/one-time code: ([A-Z0-9]{4}-[A-Z0-9]{4})/)
+    if (found) settle({ code: found[1] })
+  }
+  child.stdout?.on('data', read)
+  child.stderr?.on('data', read)
+  const done = new Promise<boolean>((resolve) => {
+    child.on('error', (err) => {
+      const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
+      settle({
+        error: missing ? '`gh` is not installed. Run `brew install gh`, then try again.' : err.message
+      })
+      resolve(false)
+    })
+    child.on('exit', (status) => {
+      const last = output.trim().split('\n').pop()
+      settle({ error: last || 'GitHub login stopped. Try again.' })
+      resolve(status === 0)
+    })
+  })
+  // Kept after it ends, so a wait that arrives after a quick exit still gets the result.
+  const entry = { child, code, done, finished: false }
+  void done.then(() => (entry.finished = true))
+  login = entry
+  return code
+}
+
+/** True once the account is stored; false when the login failed or was cancelled. */
+export function waitGithubLogin(): Promise<boolean> {
+  return login?.done ?? Promise.resolve(false)
+}
+
+export function cancelGithubLogin(): void {
+  if (login && !login.finished) login.child.kill()
 }

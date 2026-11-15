@@ -10,6 +10,7 @@ import type {
   GitStatus,
   LaunchSettings,
   MergeMode,
+  NewRepoOptions,
   Preferences,
   Repo,
   Session,
@@ -150,10 +151,11 @@ export default function App(): React.JSX.Element {
     window.maestro.ui.arrange(sessionId, arrangement)
   }, [])
 
-  const notice = useCallback((message: string) => {
+  /** `ms` is for a message that needs reading, not just noticing. */
+  const notice = useCallback((message: string, ms = 2600) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(message)
-    toastTimer.current = setTimeout(() => setToast(null), 2600)
+    toastTimer.current = setTimeout(() => setToast(null), ms)
   }, [])
 
   // ── bootstrap ─────────────────────────────────────────────────────────────
@@ -353,6 +355,20 @@ export default function App(): React.JSX.Element {
       setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
       setOverlay(null)
       notice(login ? `Cloned ${repo.name} as ${login}` : `Cloned ${repo.name}`)
+      return null
+    },
+    [notice]
+  )
+
+  const createRepo = useCallback(
+    async (opts: NewRepoOptions): Promise<string | null> => {
+      const result = await window.maestro.repos.create(opts)
+      if (result.error) return result.error
+      const repo = result.repo!
+      setRepos((prev) => (prev.some((r) => r.id === repo.id) ? prev : [...prev, repo]))
+      setOverlay(null)
+      if (result.warning) notice(result.warning, 8000)
+      else notice(opts.login ? `Created ${repo.name} as ${opts.login}` : `Created ${repo.name}`)
       return null
     },
     [notice]
@@ -774,7 +790,7 @@ export default function App(): React.JSX.Element {
         id: 'add-repo',
         icon: 'ph ph-folder-plus',
         label: 'Add repo…',
-        hint: 'clone or add a folder',
+        hint: 'clone, start new or add a folder',
         run: () => setOverlay('addRepo')
       },
       ...repos.map((repo) => ({
@@ -1155,6 +1171,7 @@ export default function App(): React.JSX.Element {
           defaultParent={repos.length ? repos[repos.length - 1].path.replace(/\/[^/]+\/?$/, '') : home}
           onClose={() => setOverlay(null)}
           onClone={cloneRepo}
+          onCreate={createRepo}
           onAdd={addRepo}
         />
       )}

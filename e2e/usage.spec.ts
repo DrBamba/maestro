@@ -66,8 +66,9 @@ test('the usage ring shows every plan limit once Claude is signed in', async ({
   await expect(pop.locator('.usage__plan')).toHaveText('max')
   expect(usageServer.auth).toContain('Bearer test-token')
 
-  // The ring fills to the limit closest to running out.
-  await expect(window.locator('.usage-ring')).toHaveClass(/is-high/)
+  // The outer ring is the session, the inner one the week; each takes its own band.
+  await expect(window.locator('.usage-ring__arc').nth(0)).toHaveClass(/is-ok/)
+  await expect(window.locator('.usage-ring__arc').nth(1)).toHaveClass(/is-high/)
 
   await window.keyboard.press('Escape')
   await expect(pop).toHaveCount(0)
