@@ -65,6 +65,11 @@ select {
   }
 }
 
+/* Endless animations stop while Maestro is in the background; see markFocus in main.tsx. */
+:root[data-focused='false'] :is(.dot.is-working, .dot.is-delegating, .check__dot.is-pending, .spinner, .usage__spin) {
+  animation-play-state: paused;
+}
+
 @keyframes toastin {
   from {
     opacity: 0;

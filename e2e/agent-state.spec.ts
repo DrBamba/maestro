@@ -644,3 +644,31 @@ test('the finishing sound is off until it is asked for', async ({ window, profil
 
   await settle(window, profileDir, session.id)
 })
+
+test('a working dot stops pulsing while Maestro is in the background', async ({ window, profileDir }) => {
+  const session = await createSession(window, 'pulse')
+  await say(profileDir, session.id, 'working')
+  try {
+    await expect(dot(window)).toHaveClass(/is-working/)
+    const playState = (): Promise<string> =>
+      dot(window).evaluate((el) => getComputedStyle(el).animationPlayState)
+    expect(await playState()).toBe('running')
+
+    // A headless test window always reports focus, so the page is told it has none.
+    await window.evaluate(() => {
+      document.hasFocus = () => false
+      window.dispatchEvent(new Event('blur'))
+    })
+    await expect.poll(playState).toBe('paused')
+
+    await window.evaluate(() => {
+      document.hasFocus = () => true
+      window.dispatchEvent(new Event('focus'))
+    })
+    await expect.poll(playState).toBe('running')
+  } finally {
+    // Still working at teardown would put up the quit warning.
+    await say(profileDir, session.id, 'done')
+    await expect(dot(window)).not.toHaveClass(/is-working/)
+  }
+})

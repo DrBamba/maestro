@@ -16,6 +16,17 @@ import { initialTheme } from './theme'
 // had a chance to paint, which is a white window appearing dark for a frame, or the reverse.
 document.documentElement.dataset.theme = initialTheme()
 
+/*
+ * Marks whether Maestro is the app in front. The stylesheet pauses its endless animations while it
+ * is not: each one keeps the GPU drawing frames for a window nobody is looking at.
+ */
+const markFocus = (): void => {
+  document.documentElement.dataset.focused = String(document.hasFocus())
+}
+markFocus()
+window.addEventListener('focus', markFocus)
+window.addEventListener('blur', markFocus)
+
 // Deliberately not wrapped in StrictMode: its double-invoked mount effects would spawn and
 // immediately kill a real `claude` PTY for every terminal on every mount.
 /*
