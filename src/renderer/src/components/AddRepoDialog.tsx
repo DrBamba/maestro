@@ -3,6 +3,7 @@ import { GITIGNORE_TEMPLATES, type GitignoreTemplate, type NewRepoOptions } from
 import { homeRelative } from '../lib/format'
 import GithubAccountField from './GithubAccountField'
 import Modal from './Modal'
+import RepoSuggestInput from './RepoSuggestInput'
 
 type Mode = 'clone' | 'new' | 'existing'
 
@@ -78,6 +79,8 @@ export default function AddRepoDialog({
   /** Undefined until gh answers, null when gh is missing. */
   const [accounts, setAccounts] = useState<{ login: string; active: boolean }[] | null | undefined>()
   const [login, setLogin] = useState<string | null>(null)
+  /** Clone suggestions per account, filled the first time the clone tab shows it. */
+  const [reposBy, setReposBy] = useState<Record<string, string[] | null>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const sourceRef = useRef<HTMLInputElement>(null)
@@ -92,6 +95,19 @@ export default function AddRepoDialog({
   }, [])
 
   useEffect(loadAccounts, [loadAccounts])
+
+  const reposKey = login ?? ''
+  useEffect(() => {
+    if (mode !== 'clone' || !accounts || reposKey in reposBy) return
+    let live = true
+    void window.maestro.repos.githubRepos(login).then((list) => {
+      if (live) setReposBy((by) => ({ ...by, [reposKey]: list }))
+    })
+    return () => {
+      live = false
+    }
+  }, [mode, accounts, login, reposKey, reposBy])
+  const repos = accounts ? reposBy[reposKey] : null
 
   useEffect(() => {
     if (mode === 'existing') pathRef.current?.focus()
@@ -200,15 +216,14 @@ export default function AddRepoDialog({
         <>
           <div className="field">
             <label htmlFor="clone-source">Which repo?</label>
-            <input
+            <RepoSuggestInput
               id="clone-source"
               ref={sourceRef}
-              className="input"
               placeholder="owner/name or a clone URL"
-              spellCheck={false}
               value={source}
-              onChange={(e) => setSource(e.target.value)}
-              onKeyDown={onEnter}
+              onChange={setSource}
+              onEnter={() => void submit()}
+              repos={repos}
             />
           </div>
 
