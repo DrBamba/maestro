@@ -1500,6 +1500,55 @@ select {
   margin-right: 4px;
 }
 
+/* Type-to-filter suggestions under a text field, over whatever fields follow. */
+.suggest {
+  position: relative;
+}
+
+.suggest__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--shell-overlay);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+}
+
+.suggest__item {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font: 400 13px var(--font-body);
+  color: var(--color-text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest__item.is-cursor {
+  background: var(--hover);
+}
+
+.suggest__empty {
+  padding: 8px 10px;
+  font: 400 12.5px var(--font-body);
+  color: var(--color-neutral-600);
+}
+
+.suggest__empty .spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+
 /* The one-time code from `gh auth login --web`, large enough to read across to the browser. */
 .gh-connect {
   display: flex;

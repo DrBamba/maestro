@@ -155,6 +155,8 @@ const api = {
     /** gh's logged-in accounts, or null when gh is missing. */
     githubAccounts: (): Promise<{ login: string; active: boolean }[] | null> =>
       ipcRenderer.invoke('github:accounts'),
+    /** `owner/name` of the repos `login` can reach, most recently pushed first; null when gh fails. */
+    githubRepos: (login: string | null): Promise<string[] | null> => ipcRenderer.invoke('github:repos', login),
     /** `git init` plus starter files, a first commit and optionally a GitHub repo; then adds it. */
     create: (opts: NewRepoOptions): Promise<{ repo?: Repo; error?: string; warning?: string }> =>
       ipcRenderer.invoke('repo:create', opts),

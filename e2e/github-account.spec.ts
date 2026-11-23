@@ -25,6 +25,13 @@ case "$1 $2" in
       token-home-acct) echo '{"id":111,"login":"home-acct","name":null}' ;;
       *) exit 1 ;;
     esac ;;
+  "api --paginate")
+    # The repos each account can clone.
+    case "$GH_TOKEN" in
+      token-work-acct) printf 'some-org/solo\nsome-org/shared\n' ;;
+      token-home-acct) printf 'home-acct/mine\nhome-acct/website\nsome-org/shared\n' ;;
+      *) exit 1 ;;
+    esac ;;
   "api repos/"*)
     # Who may push where: both accounts on the shared repos, only work-acct on solo.
     case "$2:$GH_TOKEN" in
@@ -191,6 +198,39 @@ test('a repo cloned in Maestro keeps the account it was cloned as', async ({ win
   expect(await config(clone, 'user.email')).toBe('222+work-acct@users.noreply.github.com')
   const paths = await window.evaluate(() => window.maestro.snapshot().then((s) => s.repos.map((r) => r.path)))
   expect(paths.some((p) => p.endsWith('/clones/demo-web'))).toBe(true)
+})
+
+test('the clone field suggests the picked account\'s repos as you type', async ({ window }) => {
+  await window.click('.sidebar__foot .btn--block')
+  const dialog = window.locator('.modal')
+  const source = dialog.locator('#clone-source')
+  const options = dialog.locator('[role="option"]')
+
+  // Empty matches everything the account can reach.
+  await source.focus()
+  await expect(options).toHaveText(['home-acct/mine', 'home-acct/website', 'some-org/shared'])
+
+  await source.fill('WEB')
+  await expect(options).toHaveText(['home-acct/website'])
+  await window.keyboard.press('ArrowDown')
+  await window.keyboard.press('Enter')
+  await expect(source).toHaveValue('home-acct/website')
+  await expect(options).toHaveCount(0)
+
+  // Another account brings its own list.
+  await dialog.locator('.seg__opt', { hasText: 'work-acct' }).click()
+  await source.fill('')
+  await expect(options).toHaveText(['some-org/solo', 'some-org/shared'])
+  await source.fill('nothing-like-it')
+  await expect(dialog.locator('.suggest__empty')).toHaveText('No matching repos')
+
+  // Escape closes the list, not the dialog.
+  await window.keyboard.press('Escape')
+  await expect(dialog.locator('.suggest__list')).toHaveCount(0)
+  await expect(dialog).toHaveCount(1)
+  await source.fill('so')
+  await options.first().click()
+  await expect(source).toHaveValue('some-org/solo')
 })
 
 test('a repo added before accounts were guessed gets one at its next session', async ({ window, profileDir }) => {

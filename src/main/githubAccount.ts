@@ -176,6 +176,36 @@ export async function tokenFor(login: string): Promise<string | null> {
   }
 }
 
+/**
+ * `owner/name` of every repo the account can reach (its own, collaborations and its orgs'), most
+ * recently pushed first. Null `login` asks as gh's active account; null back means gh failed.
+ */
+export async function githubRepos(login: string | null): Promise<string[] | null> {
+  if (login !== null && !LOGIN.test(login)) return null
+  const env = storedLoginsEnv()
+  if (login) {
+    const token = await tokenFor(login)
+    if (!token) return null
+    env.GH_TOKEN = token
+  }
+  try {
+    const { stdout } = await exec(
+      'gh',
+      [
+        'api',
+        '--paginate',
+        'user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
+        '--jq',
+        '.[].full_name'
+      ],
+      { env, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 }
+    )
+    return stdout.split('\n').filter(Boolean)
+  } catch {
+    return null
+  }
+}
+
 /** `owner` and `name` of a github.com remote, over https or ssh; null for anything else. */
 export function githubRepoOf(url: string): { owner: string; name: string } | null {
   const match = url

@@ -46,6 +46,7 @@ import {
   describeAccounts,
   githubAccounts,
   githubEnv,
+  githubRepos,
   setRepoAccount,
   startGithubLogin,
   waitGithubLogin
@@ -422,6 +423,7 @@ export function registerIpc(): void {
   )
 
   ipcMain.handle('github:accounts', () => githubAccounts())
+  ipcMain.handle('github:repos', (_e, login: string | null) => githubRepos(login))
   ipcMain.handle('github:login', () => startGithubLogin())
   ipcMain.handle('github:loginWait', () => waitGithubLogin())
   ipcMain.handle('github:loginCancel', () => cancelGithubLogin())
