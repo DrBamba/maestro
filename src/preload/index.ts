@@ -214,6 +214,11 @@ const api = {
       ipcRenderer.invoke('session:archivePlan', id),
     dispose: (id: string, options: DisposeOptions): Promise<ArchiveResult> =>
       ipcRenderer.invoke('session:dispose', id, options),
+    /** Disposes a selection together; each session's result, in the order given. */
+    disposeMany: (
+      jobs: { id: string; options: DisposeOptions }[]
+    ): Promise<{ id: string; result: ArchiveResult }[]> =>
+      ipcRenderer.invoke('session:disposeMany', jobs),
     /** What deleting a shared local folder's sessions would do. */
     folderPlan: (dir: string): Promise<LocalFolderPlan> => ipcRenderer.invoke('local:folderPlan', dir),
     /** Deletes every open session in the folder, and the folder itself when asked. */

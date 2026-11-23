@@ -1160,6 +1160,23 @@ export async function archivePlan(sessionId: string): Promise<ArchivePlan | null
   }
 }
 
+/*
+ * Disposals run in parallel, but a few git writes share one file per repo — `refs/stash`, and
+ * `packed-refs` when a branch is deleted — and git fails rather than waits on its lock. Those writes
+ * queue here per repo; the slow part, deleting the worktree's files, does not.
+ */
+const repoQueues = new Map<string, Promise<unknown>>()
+
+function withRepoLock<T>(repoPath: string, fn: () => Promise<T>): Promise<T> {
+  const run = (repoQueues.get(repoPath) ?? Promise.resolve()).then(fn, fn)
+  const tail = run.catch(() => undefined)
+  repoQueues.set(repoPath, tail)
+  void tail.then(() => {
+    if (repoQueues.get(repoPath) === tail) repoQueues.delete(repoPath)
+  })
+  return run
+}
+
 /**
  * Deals with uncommitted work before the worktree goes. Every outcome is explicit: nothing is
  * discarded unless discarding was chosen.
@@ -1178,7 +1195,10 @@ async function settleWip(
   if (wip === 'stash') {
     commands.push('git stash push -u -m "maestro: archived <session>"')
     try {
-      const ref = await git.stashPushRef(session.worktreePath, `maestro: archived ${session.name}`)
+      const repoPath = store.repo(session.repoId)?.path ?? session.worktreePath
+      const ref = await withRepoLock(repoPath, () =>
+        git.stashPushRef(session.worktreePath, `maestro: archived ${session.name}`)
+      )
       return { ok: true, stash: ref ?? undefined }
     } catch (err) {
       const message = err instanceof git.GitError ? err.stderr.split('\n')[0] : String(err)
@@ -1250,16 +1270,22 @@ export async function disposeSession(
   }
 
   if (removeWorktree && repo) {
+    let removed = false
     try {
       const result = await git.removeWorktree(
         repo.path,
         session.worktreePath,
         session.branch,
-        deleteBranch,
+        false,
         // Discarding is the only path that forces past git's refusal.
         options.wip === 'discard'
       )
       commands.push(...result.commands)
+      removed = true
+      if (deleteBranch) {
+        commands.push(`git branch -D ${session.branch}`)
+        await withRepoLock(repo.path, () => git.deleteBranchOrThrow(repo.path, session.branch))
+      }
     } catch (err) {
       const message = err instanceof git.GitError ? err.stderr.split('\n')[0] : String(err)
 
@@ -1268,13 +1294,15 @@ export async function disposeSession(
       if (!options.hardDelete) {
         return { ok: false, error: message || 'Could not remove the worktree.', commands }
       }
-      commands.push(`rm -rf ${session.worktreePath}`)
-      await rm(session.worktreePath, { recursive: true, force: true })
-      commands.push('git worktree prune')
-      await git.pruneWorktrees(repo.path)
+      if (!removed) {
+        commands.push(`rm -rf ${session.worktreePath}`)
+        await rm(session.worktreePath, { recursive: true, force: true })
+        commands.push(`git worktree remove --force ${session.worktreePath}`)
+        await git.forgetWorktree(repo.path, session.worktreePath)
+      }
       if (deleteBranch) {
         commands.push(`git branch -D ${session.branch}`)
-        await git.deleteBranch(repo.path, session.branch)
+        await withRepoLock(repo.path, () => git.deleteBranch(repo.path, session.branch))
       }
     }
   } else if (deleteBranch && repo) {
@@ -1283,12 +1311,12 @@ export async function disposeSession(
      * archiving left behind. A branch already deleted by hand is not an error: the requested end
      * state is what matters, and it is already true.
      */
-    commands.push('git worktree prune')
-    await git.pruneWorktrees(repo.path)
+    commands.push(`git worktree remove --force ${session.worktreePath}`)
+    await git.forgetWorktree(repo.path, session.worktreePath)
     if (await git.branchExists(repo.path, session.branch)) {
       try {
         commands.push(`git branch -D ${session.branch}`)
-        await git.deleteBranch(repo.path, session.branch)
+        await withRepoLock(repo.path, () => git.deleteBranchOrThrow(repo.path, session.branch))
       } catch (err) {
         const message = err instanceof git.GitError ? err.stderr.split('\n')[0] : String(err)
         return { ok: false, error: message || `Could not delete ${session.branch}.`, commands }
@@ -1307,6 +1335,40 @@ export async function disposeSession(
   }
   if (isLocal(session)) await syncSharedFolderNote(session.worktreePath)
   return { ok: true, commands }
+}
+
+/** How many sessions are disposed at once — enough to overlap the disk work, not to thrash it. */
+const DISPOSE_CONCURRENCY = 6
+
+/**
+ * Disposes many sessions at once. Jobs in one local folder keep their order — the last of them may
+ * take the folder, which main refuses while another session still works in it. Everything else
+ * runs side by side.
+ */
+export async function disposeSessions(
+  jobs: { id: string; options: DisposeOptions }[]
+): Promise<{ id: string; result: ArchiveResult }[]> {
+  const lanes = new Map<string, typeof jobs>()
+  for (const job of jobs) {
+    const session = store.session(job.id)
+    const key = session && isLocal(session) ? `local:${session.worktreePath}` : `session:${job.id}`
+    lanes.set(key, [...(lanes.get(key) ?? []), job])
+  }
+
+  const results = new Map<string, ArchiveResult>()
+  const queue = [...lanes.values()]
+  const worker = async (): Promise<void> => {
+    for (let lane = queue.shift(); lane; lane = queue.shift()) {
+      for (const job of lane) {
+        const result = await disposeSession(job.id, job.options).catch(
+          (err): ArchiveResult => ({ ok: false, error: String(err), commands: [] })
+        )
+        results.set(job.id, result)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(DISPOSE_CONCURRENCY, queue.length) }, worker))
+  return jobs.map((job) => ({ id: job.id, result: results.get(job.id)! }))
 }
 
 /** Local sessions working in `dir`, open and archived. */

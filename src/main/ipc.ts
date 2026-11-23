@@ -59,6 +59,7 @@ import {
   applyGeneratedTitle,
   archivePlan,
   disposeSession,
+  disposeSessions,
   restoreSession,
   createSession,
   createLocalSession,
@@ -640,6 +641,17 @@ export function registerIpc(): void {
     refreshBadge()
     return result
   })
+
+  // One round trip and one sidebar update for the whole selection.
+  ipcMain.handle(
+    'session:disposeMany',
+    async (_e, jobs: { id: string; options: DisposeOptions }[]) => {
+      const results = await disposeSessions(jobs)
+      pushSessions()
+      refreshBadge()
+      return results
+    }
+  )
 
   ipcMain.handle('local:folderPlan', (_e, dir: string) => localFolderPlan(dir))
 

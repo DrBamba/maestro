@@ -999,10 +999,27 @@ test('sessions picked together are deleted together', async ({ window }) => {
   await expect(dialog.locator('.outcome')).toContainText('3 deleted')
   const discard = dialog.locator('.seg__opt:has-text("Discard them")')
   if (await discard.count()) await discard.click()
+
+  // Every row count the sidebar passes through on the way out.
+  await window.evaluate(() => {
+    const count = (): number =>
+      [...document.querySelectorAll('.session-row')].filter((r) => r.textContent?.includes('bulk '))
+        .length
+    const seen = [count()]
+    ;(window as unknown as { bulkCounts: number[] }).bulkCounts = seen
+    new MutationObserver(() => {
+      const n = count()
+      if (n !== seen[seen.length - 1]) seen.push(n)
+    }).observe(document.body, { childList: true, subtree: true })
+  })
   await dialog.locator('.modal__actions .btn--primary').click()
 
   await expect(dialog).toHaveCount(0, { timeout: 30_000 })
   await expect(window.locator('.session-row', { hasText: 'bulk ' })).toHaveCount(0)
+  // All at once, not one by one.
+  expect(
+    await window.evaluate(() => (window as unknown as { bulkCounts: number[] }).bulkCounts)
+  ).toEqual([3, 0])
   await expect(window.locator('.sidebar__selection')).toHaveCount(0)
   for (const { path } of subjects) expect(existsSync(path)).toBe(false)
   const repoPath = await window.evaluate(() =>

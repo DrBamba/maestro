@@ -15,7 +15,7 @@ interface BulkDisposeDialogProps {
   /** Sessions whose Claude is mid-turn — disposing stops them. */
   busyCount: number
   onClose: () => void
-  /** Runs one session at a time and reports the ones that failed, which stay selected. */
+  /** Runs the selection together and reports the ones that failed, which stay selected. */
   onDispose: (
     jobs: { id: string; options: DisposeOptions }[],
     action: DisposeAction

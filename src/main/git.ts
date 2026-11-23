@@ -322,9 +322,19 @@ export async function removeWorktree(
     await git(repoPath, ['branch', '-D', branch])
   }
 
-  commands.push('git worktree prune')
-  await gitOrNull(repoPath, ['worktree', 'prune'])
+  // `worktree remove` drops its own admin entry. No `prune` here: removals run in parallel, and a
+  // prune would take the entry of a worktree another removal is halfway through deleting.
   return { commands }
+}
+
+/**
+ * Drops one worktree's record after its directory went another way — `git worktree remove` on a
+ * missing path only removes the entry, without the repo-wide sweep of `prune`.
+ */
+export async function forgetWorktree(repoPath: string, worktreePath: string): Promise<void> {
+  // `--force` on a directory still there would delete it, uncommitted work and all.
+  if (await stat(worktreePath).then(() => true, () => false)) return
+  await gitOrNull(repoPath, ['worktree', 'remove', '--force', worktreePath])
 }
 
 /** Stashes tracked and untracked changes. Stashes live in the common git dir, so any worktree of
@@ -402,6 +412,11 @@ export async function pruneWorktrees(repoPath: string): Promise<void> {
 
 export async function deleteBranch(repoPath: string, branch: string): Promise<void> {
   await gitOrNull(repoPath, ['branch', '-D', branch])
+}
+
+/** Like {@link deleteBranch}, but git's refusal reaches the caller. */
+export async function deleteBranchOrThrow(repoPath: string, branch: string): Promise<void> {
+  await git(repoPath, ['branch', '-D', branch])
 }
 
 /** Renames a branch in place, worktree and all. Only safe while nothing else refers to it. */

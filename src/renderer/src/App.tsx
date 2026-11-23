@@ -525,12 +525,10 @@ export default function App(): React.JSX.Element {
     async (jobs: { id: string; options: DisposeOptions }[], action: DisposeAction) => {
       const done = new Set<string>()
       const failed: string[] = []
-      // One at a time: sessions of one repo share its git lock.
-      for (const job of jobs) {
-        const result = await window.maestro.sessions.dispose(job.id, job.options)
-        if (result.ok) done.add(job.id)
+      for (const { id, result } of await window.maestro.sessions.disposeMany(jobs)) {
+        if (result.ok) done.add(id)
         else {
-          const name = sessions.find((s) => s.id === job.id)?.name ?? job.id
+          const name = sessions.find((s) => s.id === id)?.name ?? id
           failed.push(`“${name}”: ${result.error ?? 'failed'}`)
         }
       }
