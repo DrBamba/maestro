@@ -304,6 +304,8 @@ export default function App(): React.JSX.Element {
     [repos, activeSession]
   )
   const activeStatus = activeId ? (statuses[activeId] ?? null) : null
+  // Where Merge and PR go: the branch the session was cut from, or the default one.
+  const activeBase = activeStatus?.base ?? activeRepo?.defaultBranch ?? 'main'
   // The active session's status is polled far more often, so its row follows that.
   const rowSyncs = useMemo(
     () =>
@@ -311,6 +313,7 @@ export default function App(): React.JSX.Element {
         ? {
             ...syncs,
             [activeId]: {
+              base: activeStatus.base,
               ahead: activeStatus.ahead,
               unpushed: activeStatus.unpushed,
               landing: activeStatus.landing
@@ -635,8 +638,8 @@ export default function App(): React.JSX.Element {
       if (result.ok) {
         notice(
           mode === 'rebase'
-            ? `Rebased onto ${activeRepo?.defaultBranch ?? 'main'}${archiveAfter ? ' · worktree archived' : ''}`
-            : `Merged into ${activeRepo?.defaultBranch ?? 'main'}${archiveAfter ? ' · worktree archived' : ''}`
+            ? `Rebased onto ${activeBase}${archiveAfter ? ' · worktree archived' : ''}`
+            : `Merged into ${activeBase}${archiveAfter ? ' · worktree archived' : ''}`
         )
         if (archiveAfter) {
           setOpenedIds((ids) => ids.filter((id) => id !== activeId))
@@ -645,7 +648,7 @@ export default function App(): React.JSX.Element {
       }
       return result
     },
-    [activeId, activeRepo, notice]
+    [activeId, activeBase, notice]
   )
 
   const handToClaude = useCallback(
@@ -868,7 +871,7 @@ export default function App(): React.JSX.Element {
           {
             id: 'merge',
             icon: 'ph ph-arrows-merge',
-            label: `Merge into ${activeRepo.defaultBranch}`,
+            label: `Merge into ${activeBase}`,
             run: () => setOverlay('merge')
           },
           {
@@ -989,6 +992,7 @@ export default function App(): React.JSX.Element {
     activeId,
     activeSession,
     activeRepo,
+    activeBase,
     addRepo,
     repos,
     notice,
@@ -1286,7 +1290,7 @@ export default function App(): React.JSX.Element {
       {overlay === 'merge' && activeSession && activeRepo && (
         <MergeDialog
           branch={activeSession.branch}
-          defaultBranch={activeRepo.defaultBranch}
+          base={activeBase}
           status={activeStatus}
           commitCount={activeStatus?.ahead ?? 0}
           onClose={() => setOverlay(null)}
@@ -1301,7 +1305,7 @@ export default function App(): React.JSX.Element {
           sessionId={activeSession.id}
           sessionName={activeSession.name}
           branch={activeSession.branch}
-          defaultBranch={activeRepo.defaultBranch}
+          base={activeBase}
           remote={remote}
           ghAvailable={ghAvailable}
           fileCount={activeStatus?.files.length ?? 0}

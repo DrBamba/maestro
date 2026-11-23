@@ -878,10 +878,19 @@ export default function SessionView({
                 {session.branch}
               </span>
             )}
+            {/* Cut from another branch: what the counts are against, and what Merge lands on. */}
+            {status && repo && status.base !== repo.defaultBranch && (
+              <span className="session__meta-item session__base" data-tip={`Merges into ${status.base}`}>
+                <i className="ph ph-arrow-right" />
+                {status.base}
+              </span>
+            )}
             {/* Once anything has landed, where it went and what came after is what is left. */}
             {status?.landing && <LandingChip landing={status.landing} />}
             {status && !status.landing && (
-              <span style={{ whiteSpace: 'nowrap' }}>{aheadBehind(status.ahead, status.behind)}</span>
+              <span style={{ whiteSpace: 'nowrap' }} data-tip={`Commits ahead of and behind ${status.base}`}>
+                {aheadBehind(status.ahead, status.behind)}
+              </span>
             )}
             {status && !status.landing && (
               <span style={{ whiteSpace: 'nowrap' }}>{filesChanged(status.files.length)}</span>

@@ -3,17 +3,19 @@ import { landedOn, sinceLanding } from '../lib/format'
 
 /**
  * A sidebar row's branch, at a glance: commits ahead while it is unmerged, with a cloud once origin
- * has all of them, a merge glyph once any
- * of it is on the base — green pushed, amber not — and what has happened on it since, in the
- * accent, because that is the work still left to land.
+ * has all of them, a merge glyph once any of it is on the base — green pushed, amber not — and what
+ * has happened on it since, in the accent, because that is the work still left to land.
+ *
+ * Ahead of its base, which is the branch it was cut from: a session stacked on another's work
+ * starts at nothing rather than wearing the parent's commits as its own.
  */
 export function SyncMark({ sync }: { sync: BranchSync | undefined }): React.JSX.Element | null {
   if (!sync) return null
-  const { ahead, unpushed, landing } = sync
+  const { base, ahead, unpushed, landing } = sync
   if (!landing) {
     if (ahead === 0) return null
     const pushed = unpushed === 0
-    const tip = `${ahead} commit${ahead === 1 ? '' : 's'} ahead`
+    const tip = `${ahead} commit${ahead === 1 ? '' : 's'} ahead of ${base}`
     return (
       <span
         className={`sync${pushed ? ' is-pushed' : ''}`}

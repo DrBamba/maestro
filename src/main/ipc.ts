@@ -325,6 +325,11 @@ function requireSession(sessionId: string): { session: Session; repo: Repo } | n
   return { session, repo }
 }
 
+/** What a session's status counts from and its Merge and PR target — see `git.resolveBase`. */
+function baseOf(session: Session, repo: Repo): Promise<git.Base> {
+  return git.resolveBase(session.worktreePath, session.branch, session.base, repo.defaultBranch)
+}
+
 /** For the handlers that only need a working directory: the terminals, the editor, the agent. */
 function requireDirectory(sessionId: string): Session | null {
   return store.session(sessionId) ?? null
@@ -683,7 +688,7 @@ export function registerIpc(): void {
     const ctx = requireSession(sessionId)
     if (!ctx) return null
     try {
-      return await git.status(ctx.session.worktreePath, ctx.repo.defaultBranch)
+      return await git.status(ctx.session.worktreePath, await baseOf(ctx.session, ctx.repo))
     } catch {
       return null
     }
@@ -701,7 +706,7 @@ export function registerIpc(): void {
             const sync = await git.branchSync(
               session.worktreePath,
               session.branch,
-              repo.defaultBranch
+              await baseOf(session, repo)
             )
             return [session.id, sync] as const
           } catch {
@@ -733,16 +738,13 @@ export function registerIpc(): void {
     const ctx = requireSession(input.sessionId)
     if (!ctx) return { ok: false, conflicts: [], message: 'Session not found.' }
 
-    const integrated = await git.integrate(
-      ctx.session.worktreePath,
-      ctx.repo.defaultBranch,
-      input.mode
-    )
+    const base = await baseOf(ctx.session, ctx.repo)
+    const integrated = await git.integrate(ctx.session.worktreePath, base.ref, input.mode)
     if (!integrated.ok) {
       return { ok: false, conflicts: integrated.conflicts, message: integrated.message }
     }
 
-    const landed = await git.landOnBase(ctx.repo.path, ctx.repo.defaultBranch, ctx.session.branch)
+    const landed = await git.landOnBase(ctx.repo.path, base.branch, ctx.session.branch)
     if (!landed.ok) return { ok: false, conflicts: [], message: landed.message }
 
     if (input.archiveAfter) {
@@ -769,7 +771,7 @@ export function registerIpc(): void {
     return git.createPullRequest(
       ctx.session.worktreePath,
       ctx.session.branch,
-      ctx.repo.defaultBranch,
+      (await baseOf(ctx.session, ctx.repo)).branch,
       input.title,
       input.body
     )

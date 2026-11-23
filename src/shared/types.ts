@@ -87,6 +87,12 @@ export interface Session {
   name: string
   /** feature/<slug>, empty for a local session. */
   branch: string
+  /**
+   * The branch this session's own was cut from, by its local name. Status, Merge and PR follow it
+   * until it is gone or what the session took from it is on the default branch — see
+   * `git.resolveBase`. Absent on a session that works on an existing branch rather than cutting one.
+   */
+  base?: string
   /** The session's working directory. A worktree, or the folder itself when local. */
   worktreePath: string
   createdAt: number
@@ -397,6 +403,8 @@ export interface Landing {
 
 /** The sidebar's view of a session's branch: how far ahead it is, or where it landed. */
 export interface BranchSync {
+  /** What `ahead` counts from and Merge lands on: the default branch, or the one it was cut from. */
+  base: string
   ahead: number
   /** Commits the branch's remote copy does not have; null when it was never pushed. */
   unpushed: number | null
@@ -405,6 +413,8 @@ export interface BranchSync {
 
 export interface GitStatus {
   branch: string
+  /** What everything here is measured against — see {@link BranchSync.base}. */
+  base: string
   ahead: number
   behind: number
   unpushed: number | null

@@ -1,7 +1,8 @@
 import type { Locator, Page } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect } from './fixtures'
 
@@ -12,9 +13,10 @@ const exec = promisify(execFile)
  * so a merge made in a terminal shows the same as one made through Maestro's own dialog.
  */
 
-async function createSession(window: Page, name: string): Promise<void> {
+async function createSession(window: Page, name: string, base?: string): Promise<void> {
   await window.click('[aria-label="New session in demo-api"]')
   await window.fill('#session-name', name)
+  if (base) await window.selectOption('#session-base', base)
   await window.click('.modal__actions .btn--primary')
   await expect(row(window, name)).toHaveClass(/is-active/, { timeout: 30_000 })
 }
@@ -142,4 +144,110 @@ test('rebasing onto main is not landing', async ({ window, profileDir }) => {
   // The branch now has main's commits in it, which are on main without the session's being there.
   await expect(row(window, 'pagination').locator('.sync')).toHaveText('1', { timeout: 15_000 })
   await expect(window.locator('.session__header .landing-chip')).toHaveCount(0)
+})
+
+test('a session cut from another counts only its own work, until the other lands', async ({
+  window,
+  profileDir
+}) => {
+  const repoPath = await withOrigin(profileDir)
+  await createSession(window, 'search api')
+  const parent = await sessionNamed(window, 'search api')
+  await commit(parent.path, 'search.py')
+  await commit(parent.path, 'index.py')
+  await expect(row(window, 'search api').locator('.sync')).toHaveText('2', { timeout: 15_000 })
+
+  await createSession(window, 'search ui', parent.branch)
+  const child = await sessionNamed(window, 'search ui')
+  const mark = row(window, 'search ui').locator('.sync')
+  // Every open session keeps its view mounted; the active one is the one showing.
+  const meta = window.locator('.session__header .session__meta').filter({ visible: true })
+  const base = meta.locator('.session__base')
+
+  // The parent's two commits are the parent's: the child starts at nothing, against the parent.
+  await expect(base).toHaveText(parent.branch, { timeout: 15_000 })
+  await expect(meta).toContainText('↑0 ↓0')
+  await expect(meta).toContainText('0 files changed')
+  await expect(mark).toHaveCount(0)
+
+  await commit(child.path, 'results.py')
+  await expect(mark).toHaveText('1', { timeout: 15_000 })
+  await expect(meta).toContainText('↑1 ↓0')
+  await expect(meta).toContainText('1 file changed')
+
+  // The parent moving on puts the child behind it, not ahead.
+  await commit(parent.path, 'ranking.py')
+  await expect(meta).toContainText('↑1 ↓1', { timeout: 15_000 })
+
+  // Once what the child took from the parent is on main, main is its base again — and still only
+  // the child's own commit counts.
+  await exec('git', ['merge', '-q', '--ff-only', parent.branch], { cwd: repoPath })
+  await expect(base).toHaveCount(0, { timeout: 15_000 })
+  await expect(mark).toHaveText('1')
+  await expect(meta).toContainText('↑1 ↓1')
+})
+
+test('merging a session cut from another lands it on that one, not main', async ({
+  window,
+  profileDir
+}) => {
+  const repoPath = await withOrigin(profileDir)
+  await createSession(window, 'export csv')
+  const parent = await sessionNamed(window, 'export csv')
+  await commit(parent.path, 'export.py')
+
+  await createSession(window, 'export button', parent.branch)
+  const child = await sessionNamed(window, 'export button')
+  await commit(child.path, 'button.py')
+  await expect(row(window, 'export button').locator('.sync')).toHaveText('1', { timeout: 15_000 })
+
+  await window.keyboard.press('ControlOrMeta+k')
+  await window.fill('.palette__input', 'Merge into')
+  await expect(window.locator('.palette')).toContainText(`Merge into ${parent.branch}`)
+  await window.keyboard.press('Enter')
+  await expect(window.locator('.modal__title')).toHaveText(`Merge into ${parent.branch}`)
+  await window.click(`button:has-text("Rebase onto ${parent.branch}")`)
+  await expect(window.locator('.modal__title')).toHaveCount(0, { timeout: 15_000 })
+
+  const log = async (ref: string): Promise<string> =>
+    (await exec('git', ['log', '--format=%s', ref], { cwd: repoPath })).stdout
+  expect(await log(parent.branch)).toContain('Add button.py')
+  expect(await log('main')).not.toContain('Add button.py')
+  // The parent's worktree holds its branch, so the landing fast-forwarded the files there too.
+  expect(existsSync(join(parent.path, 'button.py'))).toBe(true)
+})
+
+test('a session cut before its base was recorded finds it after a restart', async ({
+  window,
+  profileDir,
+  relaunch
+}) => {
+  await withOrigin(profileDir)
+  await createSession(window, 'audit log')
+  const parent = await sessionNamed(window, 'audit log')
+  await commit(parent.path, 'audit.py')
+  await createSession(window, 'audit filters', parent.branch)
+
+  // What a session made by an older Maestro looks like: no base on the record.
+  const storeFile = join(profileDir, 'maestro.json')
+  const next = await relaunch(async () => {
+    const data = JSON.parse(await readFile(storeFile, 'utf8')) as {
+      sessions: { name: string; base?: string }[]
+    }
+    delete data.sessions.find((s) => s.name === 'audit filters')!.base
+    await writeFile(storeFile, JSON.stringify(data), 'utf8')
+  })
+
+  // Read back from the reflog entry the cut left.
+  await expect
+    .poll(() =>
+      next.evaluate(async () => {
+        const snapshot = await window.maestro.snapshot()
+        return snapshot.sessions.find((s) => s.name === 'audit filters')?.base
+      })
+    )
+    .toBe(parent.branch)
+  await next.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(row(next, 'audit log').locator('.sync')).toHaveText('1', { timeout: 15_000 })
+  await expect(row(next, 'audit filters').locator('.sync')).toHaveCount(0)
 })

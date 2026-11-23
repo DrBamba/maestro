@@ -480,15 +480,73 @@ async function countLines(path: string): Promise<number> {
   }
 }
 
+/** What a session is compared with and lands on. */
+export interface Base {
+  /** The branch Merge lands on and a PR targets. */
+  branch: string
+  /** What reads it: the branch itself, or origin's copy while there is no local one. */
+  ref: string
+}
+
+/**
+ * The branch a session is measured and merged against: the one it was cut from, so a session
+ * started on another's work counts only its own commits — until that branch is deleted, or what the
+ * session took from it is on the default branch. Then the default branch, so a stacked session
+ * follows its parent onto main once the parent lands.
+ *
+ * "What it took" is where the two branches fork, not the start branch's tip: the parent keeps
+ * committing after the session is cut, and those commits are not the session's concern. A start
+ * branch with nothing of its own when the session was cut forks on main already, so it never
+ * becomes the base at all.
+ */
+export async function resolveBase(
+  cwd: string,
+  branch: string,
+  start: string | undefined,
+  defaultBranch: string
+): Promise<Base> {
+  const fallback = { branch: defaultBranch, ref: defaultBranch }
+  if (!start || start === defaultBranch) return fallback
+  const ref = (await refExists(cwd, `refs/heads/${start}`))
+    ? start
+    : (await refExists(cwd, `refs/remotes/origin/${start}`))
+      ? `origin/${start}`
+      : null
+  if (!ref) return fallback
+  const fork = (await gitOrNull(cwd, ['merge-base', `refs/heads/${branch}`, ref]))?.trim()
+  if (!fork) return fallback
+  const landed = await gitOrNull(cwd, ['merge-base', '--is-ancestor', fork, defaultBranch])
+  return landed === null ? { branch: start, ref } : fallback
+}
+
+async function refExists(cwd: string, ref: string): Promise<boolean> {
+  return (await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', ref])) !== null
+}
+
+/**
+ * The branch `branch` was cut from, read from the reflog entry `git worktree add -b` left — for
+ * sessions made before Maestro recorded it. Null when it was cut from something that is not a
+ * branch, or the entry has expired.
+ */
+export async function createdFrom(repoPath: string, branch: string): Promise<string | null> {
+  const log = await gitOrNull(repoPath, ['reflog', 'show', '--format=%gs', `refs/heads/${branch}`, '--'])
+  const oldest = log?.trim().split('\n').pop() ?? ''
+  const from = /^branch: Created from (.+)$/.exec(oldest)?.[1]
+  if (!from || from === 'HEAD') return null
+  if (await refExists(repoPath, `refs/heads/${from}`)) return from
+  if (await isRemoteRef(repoPath, from)) return localNameOf(from)
+  return null
+}
+
 /**
  * The session's changes: everything the worktree has that the base branch does not,
  * committed or not, plus untracked files. Scoped from the merge-base so an out-of-date
  * base branch does not show up as the session's own work.
  */
-export async function status(worktreePath: string, baseBranch: string): Promise<GitStatus> {
+export async function status(worktreePath: string, base: Base): Promise<GitStatus> {
   const branch = await currentBranch(worktreePath)
 
-  const mergeBaseOut = await gitOrNull(worktreePath, ['merge-base', 'HEAD', baseBranch])
+  const mergeBaseOut = await gitOrNull(worktreePath, ['merge-base', 'HEAD', base.ref])
   const mergeBase = mergeBaseOut?.trim() || null
 
   const files = new Map<string, ChangedFile>()
@@ -572,7 +630,7 @@ export async function status(worktreePath: string, baseBranch: string): Promise<
     'rev-list',
     '--left-right',
     '--count',
-    `${baseBranch}...HEAD`
+    `${base.ref}...HEAD`
   ])
   if (counts) {
     const [b, a] = counts.trim().split(/\s+/).map(Number)
@@ -583,13 +641,14 @@ export async function status(worktreePath: string, baseBranch: string): Promise<
   const list = [...files.values()].sort((x, y) => x.path.localeCompare(y.path))
   return {
     branch,
+    base: base.branch,
     ahead,
     behind,
     files: list,
     insertions: list.reduce((sum, f) => sum + f.insertions, 0),
     deletions: list.reduce((sum, f) => sum + f.deletions, 0),
     unpushed: await unpushed(worktreePath, branch),
-    landing: await landing(worktreePath, branch, baseBranch)
+    landing: await landing(worktreePath, branch, base.branch)
   }
 }
 
@@ -611,17 +670,18 @@ const OWN_TIP =
 export async function branchSync(
   worktreePath: string,
   branch: string,
-  baseBranch: string
+  base: Base
 ): Promise<BranchSync> {
   const counts = await gitOrNull(worktreePath, [
     'rev-list',
     '--count',
-    `${baseBranch}..refs/heads/${branch}`
+    `${base.ref}..refs/heads/${branch}`
   ])
   return {
+    base: base.branch,
     ahead: Number(counts?.trim()) || 0,
     unpushed: await unpushed(worktreePath, branch),
-    landing: await landing(worktreePath, branch, baseBranch)
+    landing: await landing(worktreePath, branch, base.branch)
   }
 }
 

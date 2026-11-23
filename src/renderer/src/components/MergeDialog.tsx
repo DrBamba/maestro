@@ -4,7 +4,7 @@ import Modal from './Modal'
 
 interface MergeDialogProps {
   branch: string
-  defaultBranch: string
+  base: string
   status: GitStatus | null
   commitCount: number
   onClose: () => void
@@ -15,7 +15,7 @@ interface MergeDialogProps {
 
 export default function MergeDialog({
   branch,
-  defaultBranch,
+  base,
   status,
   commitCount,
   onClose,
@@ -40,8 +40,8 @@ export default function MergeDialog({
   const conflicts = result?.conflicts ?? []
 
   return (
-    <Modal onClose={onClose} width={480} label={`Merge into ${defaultBranch}`}>
-      <div className="modal__title">Merge into {defaultBranch}</div>
+    <Modal onClose={onClose} width={480} label={`Merge into ${base}`}>
+      <div className="modal__title">Merge into {base}</div>
       <div className="modal__sub">
         {branch} · {commitCount} commit{commitCount === 1 ? '' : 's'}, {status?.files.length ?? 0}{' '}
         file{(status?.files.length ?? 0) === 1 ? '' : 's'}
@@ -108,7 +108,7 @@ export default function MergeDialog({
         </button>
         <button className="btn btn--primary" onClick={() => void run()} disabled={busy}>
           {busy ? <span className="spinner" /> : <i className="ph ph-arrows-merge" style={{ fontSize: 15 }} />}
-          {mode === 'rebase' ? `Rebase onto ${defaultBranch}` : `Merge into ${defaultBranch}`}
+          {mode === 'rebase' ? `Rebase onto ${base}` : `Merge into ${base}`}
         </button>
       </div>
     </Modal>

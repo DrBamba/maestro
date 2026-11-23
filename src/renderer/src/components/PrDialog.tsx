@@ -7,7 +7,7 @@ interface PrDialogProps {
   sessionId: string
   sessionName: string
   branch: string
-  defaultBranch: string
+  base: string
   remote: string | null
   ghAvailable: boolean
   fileCount: number
@@ -26,7 +26,7 @@ export default function PrDialog({
   sessionId,
   sessionName,
   branch,
-  defaultBranch,
+  base,
   remote,
   ghAvailable,
   fileCount,
@@ -61,7 +61,7 @@ export default function PrDialog({
     <Modal onClose={onClose} width={520} label="Create pull request">
       <div className="modal__title">Create pull request</div>
       <div className="modal__sub">
-        {branch} → {defaultBranch}
+        {branch} → {base}
         {remote ? ` · github.com/${remote}` : ''}
       </div>
 

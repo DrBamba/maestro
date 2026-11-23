@@ -13,6 +13,7 @@ import { THEMES } from '@shared/theme'
 import { configureProfile, profile, resolveSourceLabel } from './profile'
 import { hydratePath } from './shellEnv'
 import { seedDemoRepos } from './demo'
+import { recordBases } from './sessions'
 import { platformOf } from '@shared/platform'
 import { matchShortcut, reachesEditor } from '@shared/shortcuts'
 import { updater } from './updater'
@@ -221,6 +222,8 @@ void app.whenReady().then(async () => {
   console.log(`[maestro] store=${store.path} (${store.sessions.length} session(s))`)
   // Gives a dev profile something safe to work on, so real repos are not the obvious thing to add.
   await seedDemoRepos()
+  // Not awaited: until it lands, an older session is measured against main, as it always was.
+  void recordBases()
   // Before the window: it takes its background colour from the resolved theme, and the native
   // chrome around it has to be told which one that is.
   wireTheme()

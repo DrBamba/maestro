@@ -509,6 +509,20 @@ export async function addRepo(path: string): Promise<Repo | { error: string }> {
   return store.addRepo({ name: basename(root), path: root, defaultBranch })
 }
 
+/**
+ * Fills in `base` on sessions cut before Maestro recorded it, from the reflog entry the cut left.
+ * Whatever it finds, or the default branch, is written, so each session is only asked once.
+ */
+export async function recordBases(): Promise<void> {
+  for (const session of store.sessions) {
+    if (session.base !== undefined || !session.branchOwned || isLocal(session)) continue
+    const repo = store.repo(session.repoId)
+    if (!repo || !(await git.isRepo(repo.path))) continue
+    const from = await git.createdFrom(repo.path, session.branch)
+    store.updateSession(session.id, { base: from ?? repo.defaultBranch })
+  }
+}
+
 export interface CreateResult {
   session?: Session
   error?: string
@@ -583,6 +597,7 @@ export async function createSession(
     // came from here or was typed into Claude itself.
     name: trimmed || handle,
     branch,
+    base: (await git.isRemoteRef(repo.path, baseRef)) ? git.localNameOf(baseRef) : baseRef,
     worktreePath,
     createdAt: Date.now(),
     lastActivity: Date.now(),
@@ -876,6 +891,12 @@ export async function applyGeneratedTitle(sessionId: string): Promise<TitleAttem
       try {
         await git.renameBranch(repo.path, session.branch, target)
         patch.branch = target
+        // Sessions cut from this one name it as their base, and would lose it under the old name.
+        for (const other of store.sessions) {
+          if (other.repoId === repo.id && other.base === session.branch) {
+            store.updateSession(other.id, { base: target })
+          }
+        }
       } catch (err) {
         // A readable branch name is a nicety; failing to get one must not cost the session its name.
         console.error('[sessions] branch rename failed', err)
